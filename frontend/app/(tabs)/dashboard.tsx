@@ -1,534 +1,303 @@
-import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  RefreshControl,
-  Alert,
-  ActivityIndicator,
-} from 'react-native';
-import { useRouter } from 'expo-router';
+import React, { useMemo, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useAuth } from '@/src/contexts/AuthContext';
-import { useData } from '@/src/contexts/DataContext';
-import { theme } from '@/src/constants/theme';
+import { useRouter } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import Animated, { FadeInDown, FadeInRight } from 'react-native-reanimated';
+import { useTheme } from '@/src/contexts/ThemeContext';
+import { useAuth } from '@/src/contexts/AuthContext';
+import { useData } from '@/src/contexts/DataContext';
+import { formatMYR } from '@/src/utils/currency';
+import { Badge, Card, LoadingState, Screen } from '@/src/components/UI';
+
+const { width } = Dimensions.get('window');
 
 export default function Dashboard() {
-  const { user, refreshUser } = useAuth();
-  const { dashboard, refreshAll, refreshDashboard, seedSampleData } = useData();
+  const { theme } = useTheme();
+  const { profile } = useAuth();
   const router = useRouter();
+  const { company, products, sales, purchases, expenses, categories, stockMovements } = useData();
   const [refreshing, setRefreshing] = useState(false);
 
-  const data = dashboard;
-  const loading = !dashboard;
-
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await Promise.all([refreshAll(), refreshUser()]);
-    setRefreshing(false);
-  };
-
-  const handleSeedSampleData = async () => {
-    Alert.alert(
-      'Load Sample Data',
-      'This will add sample products, categories, and sales to your account. Continue?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Load Data',
-          onPress: async () => {
-            try {
-              const res = await seedSampleData();
-              Alert.alert('Success', res.message || 'Sample data loaded successfully');
-            } catch (error: any) {
-              Alert.alert('Info', error.message || 'Data already exists');
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  const formatTimeAgo = (dateString: string) => {
-    const date = new Date(dateString);
+  const stats = useMemo(() => {
     const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
+    const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const startMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
 
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    return `${diffDays}d ago`;
-  };
+    const todaySales = sales.filter((s) => s.createdAt?.toMillis?.() >= startToday).reduce((sum, s) => sum + s.total, 0);
+    const monthSales = sales.filter((s) => s.createdAt?.toMillis?.() >= startMonth).reduce((sum, s) => sum + s.total, 0);
 
-  if (loading) {
-    return (
-      <SafeAreaView style={[styles.container, styles.centerContent]}>
-        <ActivityIndicator size="large" color={theme.colors.primary} />
-      </SafeAreaView>
-    );
-  }
+    const totalStock = products.reduce((sum, p) => sum + (p.stock || 0), 0);
+    const inventoryValue = products.reduce((sum, p) => sum + (p.stock || 0) * (p.costPrice || 0), 0);
+    const globalThreshold = company?.lowStockThreshold ?? 10;
+    const lowStockList = products.filter((p) => p.status === 'active' && p.stock <= (p.minStock ?? globalThreshold));
+
+    const monthExpenses = expenses.filter((e) => {
+      const d = e.date?.toMillis?.() || (e.date instanceof Date ? e.date.getTime() : 0);
+      return d >= startMonth;
+    }).reduce((sum, e) => sum + e.amount, 0);
+
+    // COGS from sales this month
+    const monthCogs = sales
+      .filter((s) => s.createdAt?.toMillis?.() >= startMonth)
+      .reduce((sum, s) => sum + s.items.reduce((c, i) => c + i.costPrice * i.quantity, 0), 0);
+    const grossProfit = monthSales - monthCogs;
+    const netProfit = grossProfit - monthExpenses;
+
+    // Top products (last 30 days by quantity)
+    const productSales: Record<string, { name: string; qty: number; revenue: number }> = {};
+    for (const s of sales) {
+      for (const it of s.items) {
+        if (!productSales[it.productId]) productSales[it.productId] = { name: it.productName, qty: 0, revenue: 0 };
+        productSales[it.productId].qty += it.quantity;
+        productSales[it.productId].revenue += it.total;
+      }
+    }
+    const topProducts = Object.values(productSales).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
+
+    // Sales trend — last 7 days
+    const trend: { label: string; total: number }[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i).getTime();
+      const dayEnd = dayStart + 86400000;
+      const total = sales.filter((s) => {
+        const t = s.createdAt?.toMillis?.() || 0;
+        return t >= dayStart && t < dayEnd;
+      }).reduce((sum, s) => sum + s.total, 0);
+      const d = new Date(dayStart);
+      trend.push({ label: d.toLocaleDateString('en-MY', { weekday: 'short' }), total });
+    }
+
+    return { todaySales, monthSales, totalStock, inventoryValue, lowStockList, monthExpenses, grossProfit, netProfit, topProducts, trend };
+  }, [sales, products, expenses, company]);
+
+  if (!company) return <LoadingState label="Loading your workspace..." />;
+
+  const maxTrend = Math.max(...stats.trend.map((t) => t.total), 1);
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <ScrollView
-        style={styles.scrollView}
-        showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-      >
-        {/* Header with Greeting */}
-        <Animated.View entering={FadeInDown.duration(400)} style={styles.header}>
-          <View style={styles.greetingContainer}>
-            <Text style={styles.greetingEmoji}>👋</Text>
-            <View>
-              <Text style={styles.greeting}>Welcome back,</Text>
-              <Text style={styles.userName}>{user?.company_name || 'User'}</Text>
+    <Screen>
+      <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+        <ScrollView
+          contentContainerStyle={{ paddingBottom: 40 }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); setTimeout(() => setRefreshing(false), 500); }} tintColor={theme.colors.primary} />}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Header */}
+          <Animated.View entering={FadeInDown.duration(400)} style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 13, color: theme.colors.textSecondary }}>👋 Welcome back,</Text>
+              <Text style={{ fontSize: 20, fontWeight: '800', color: theme.colors.text, marginTop: 2 }}>{profile?.displayName || company.name}</Text>
+              <Text style={{ fontSize: 11, color: theme.colors.textMuted, marginTop: 2 }}>{company.name}</Text>
             </View>
-          </View>
-          <View style={styles.trialBadge}>
-            <MaterialIcons name="schedule" size={14} color={theme.colors.primary} />
-            <Text style={styles.trialText}>
-              {user?.trial_expired ? 'Expired' : `${user?.trial_days_remaining}d left`}
-            </Text>
-          </View>
-        </Animated.View>
+            <Badge label={profile?.role?.toUpperCase() || 'ADMIN'} tone="primary" />
+          </Animated.View>
 
-        {/* Metrics Cards Grid */}
-        <View style={styles.metricsContainer}>
-          <Animated.View entering={FadeInRight.delay(100).duration(400)}>
-            {/* Today's Sales - Featured */}
-            <View style={[styles.metricCard, styles.featuredCard]}>
-              <View style={styles.metricIconContainer}>
-                <MaterialIcons name="trending-up" size={24} color={theme.colors.white} />
-              </View>
-              <View style={styles.metricContent}>
-                <Text style={styles.metricLabel}>Today's Sales</Text>
-                <Text style={styles.metricValueLarge}>RM {data?.today_sales.toFixed(2) || '0.00'}</Text>
+          {/* Featured stat: Today's Sales */}
+          <Animated.View entering={FadeInRight.delay(50).duration(400)} style={{ marginHorizontal: 16, marginTop: 16 }}>
+            <View style={[styles.featured, { backgroundColor: theme.colors.primary }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 12, fontWeight: '600' }}>TODAY'S SALES</Text>
+                  <Text style={{ color: '#FFF', fontSize: 32, fontWeight: '800', marginTop: 4 }}>{formatMYR(stats.todaySales)}</Text>
+                  <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 12, marginTop: 4 }}>This month: {formatMYR(stats.monthSales)}</Text>
+                </View>
+                <View style={{ width: 56, height: 56, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' }}>
+                  <MaterialIcons name="trending-up" size={28} color="#FFF" />
+                </View>
               </View>
             </View>
           </Animated.View>
 
-          <Animated.View entering={FadeInRight.delay(200).duration(400)} style={styles.metricRow}>
-            {/* Products */}
-            <View style={styles.metricCardSmall}>
-              <View style={[styles.metricIconSmall, { backgroundColor: '#E0F2FE' }]}>
-                <MaterialIcons name="inventory-2" size={20} color="#0284C7" />
-              </View>
-              <View style={styles.metricContentSmall}>
-                <Text style={styles.metricLabelSmall}>Products</Text>
-                <Text style={styles.metricValueSmall}>{data?.total_products || 0}</Text>
-              </View>
-            </View>
-
-            {/* Stock Value */}
-            <View style={styles.metricCardSmall}>
-              <View style={[styles.metricIconSmall, { backgroundColor: '#D1FAE5' }]}>
-                <MaterialIcons name="account-balance-wallet" size={20} color="#059669" />
-              </View>
-              <View style={styles.metricContentSmall}>
-                <Text style={styles.metricLabelSmall}>Stock Value</Text>
-                <Text style={styles.metricValueSmall}>RM {data?.stock_value.toFixed(0) || '0'}</Text>
-              </View>
-            </View>
+          {/* 4-cell mini stats */}
+          <Animated.View entering={FadeInRight.delay(100).duration(400)} style={styles.miniStatsRow}>
+            <MiniStat icon="inventory-2" iconBg="#E0F2FE" iconColor="#0284C7" label="Products" value={String(products.length)} />
+            <MiniStat icon="category" iconBg="#F3E8FF" iconColor="#9333EA" label="Categories" value={String(categories.length)} />
+          </Animated.View>
+          <Animated.View entering={FadeInRight.delay(150).duration(400)} style={styles.miniStatsRow}>
+            <MiniStat icon="account-balance-wallet" iconBg="#D1FAE5" iconColor="#059669" label="Inventory Value" value={formatMYR(stats.inventoryValue)} />
+            <MiniStat icon="widgets" iconBg="#FEF3C7" iconColor="#D97706" label="Total Stock" value={String(stats.totalStock)} />
+          </Animated.View>
+          <Animated.View entering={FadeInRight.delay(200).duration(400)} style={styles.miniStatsRow}>
+            <MiniStat icon="warning" iconBg={stats.lowStockList.length > 0 ? '#FEE2E2' : '#F1F5F9'} iconColor={stats.lowStockList.length > 0 ? '#DC2626' : '#94A3B8'} label="Low Stock" value={String(stats.lowStockList.length)} />
+            <MiniStat icon="receipt-long" iconBg="#FEE2E2" iconColor="#DC2626" label="Expenses (Mo)" value={formatMYR(stats.monthExpenses)} />
+          </Animated.View>
+          <Animated.View entering={FadeInRight.delay(250).duration(400)} style={styles.miniStatsRow}>
+            <MiniStat icon="attach-money" iconBg="#D1FAE5" iconColor="#059669" label="Gross Profit" value={formatMYR(stats.grossProfit)} />
+            <MiniStat icon="savings" iconBg={stats.netProfit >= 0 ? '#D1FAE5' : '#FEE2E2'} iconColor={stats.netProfit >= 0 ? '#059669' : '#DC2626'} label="Net Profit" value={formatMYR(stats.netProfit)} />
           </Animated.View>
 
-          <Animated.View entering={FadeInRight.delay(300).duration(400)} style={styles.metricRow}>
-            {/* Total Stock */}
-            <View style={styles.metricCardSmall}>
-              <View style={[styles.metricIconSmall, { backgroundColor: '#F3E8FF' }]}>
-                <MaterialIcons name="widgets" size={20} color="#9333EA" />
+          {/* Sales Trend chart */}
+          <Animated.View entering={FadeInDown.delay(300).duration(400)} style={styles.section}>
+            <Card>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: theme.colors.text, marginBottom: 4 }}>Sales Trend</Text>
+              <Text style={{ fontSize: 12, color: theme.colors.textSecondary, marginBottom: 16 }}>Last 7 days</Text>
+              <View style={styles.chart}>
+                {stats.trend.map((t, i) => {
+                  const h = Math.max(4, (t.total / maxTrend) * 140);
+                  return (
+                    <View key={i} style={{ flex: 1, alignItems: 'center' }}>
+                      <View style={{ height: 140, justifyContent: 'flex-end', width: '80%' }}>
+                        <View style={{ height: h, backgroundColor: theme.colors.primary, borderRadius: 6, opacity: t.total > 0 ? 1 : 0.3 }} />
+                      </View>
+                      <Text style={{ fontSize: 10, color: theme.colors.textSecondary, marginTop: 6 }}>{t.label}</Text>
+                    </View>
+                  );
+                })}
               </View>
-              <View style={styles.metricContentSmall}>
-                <Text style={styles.metricLabelSmall}>Total Stock</Text>
-                <Text style={styles.metricValueSmall}>{data?.total_stock || 0}</Text>
-              </View>
-            </View>
-
-            {/* Low Stock */}
-            <View style={styles.metricCardSmall}>
-              <View
-                style={[
-                  styles.metricIconSmall,
-                  {
-                    backgroundColor:
-                      data?.low_stock && data.low_stock > 0 ? '#FEF3C7' : '#F3F4F6',
-                  },
-                ]}
-              >
-                <MaterialIcons
-                  name="warning"
-                  size={20}
-                  color={data?.low_stock && data.low_stock > 0 ? '#D97706' : '#6B7280'}
-                />
-              </View>
-              <View style={styles.metricContentSmall}>
-                <Text style={styles.metricLabelSmall}>Low Stock</Text>
-                <Text
-                  style={[
-                    styles.metricValueSmall,
-                    data?.low_stock && data.low_stock > 0 && { color: '#D97706' },
-                  ]}
-                >
-                  {data?.low_stock || 0}
-                </Text>
-              </View>
-            </View>
+            </Card>
           </Animated.View>
-        </View>
 
-        {/* Quick Actions */}
-        <Animated.View entering={FadeInDown.delay(400).duration(400)} style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Quick Actions</Text>
-          </View>
-
-          <View style={styles.actionsGrid}>
-            <TouchableOpacity
-              style={styles.actionCard}
-              onPress={() => router.push('/(tabs)/products')}
-            >
-              <View style={[styles.actionIcon, { backgroundColor: '#DBEAFE' }]}>
-                <MaterialIcons name="add-box" size={28} color="#2563EB" />
+          {/* Quick Actions */}
+          <Animated.View entering={FadeInDown.delay(350).duration(400)} style={styles.section}>
+            <Card>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: theme.colors.text, marginBottom: 16 }}>Quick Actions</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+                <QuickAction icon="add-box" color="#2563EB" bg="#DBEAFE" label="Add Product" onPress={() => router.push('/(tabs)/inventory')} />
+                <QuickAction icon="point-of-sale" color="#059669" bg="#D1FAE5" label="New Sale" onPress={() => router.push('/(tabs)/pos')} />
+                <QuickAction icon="shopping-cart" color="#9333EA" bg="#F3E8FF" label="New Purchase" onPress={() => router.push('/purchases')} />
+                <QuickAction icon="receipt" color="#DC2626" bg="#FEE2E2" label="Expenses" onPress={() => router.push('/expenses')} />
+                <QuickAction icon="bar-chart" color="#0891B2" bg="#CFFAFE" label="Reports" onPress={() => router.push('/(tabs)/reports')} />
+                <QuickAction icon="people" color="#EA580C" bg="#FFEDD5" label="Customers" onPress={() => router.push('/customers')} />
               </View>
-              <Text style={styles.actionText}>Add Product</Text>
-            </TouchableOpacity>
+            </Card>
+          </Animated.View>
 
-            <TouchableOpacity
-              style={styles.actionCard}
-              onPress={() => router.push('/(tabs)/sales')}
-            >
-              <View style={[styles.actionIcon, { backgroundColor: '#D1FAE5' }]}>
-                <MaterialIcons name="point-of-sale" size={28} color="#059669" />
-              </View>
-              <Text style={styles.actionText}>New Sale</Text>
-            </TouchableOpacity>
+          {/* Top Products */}
+          {stats.topProducts.length > 0 && (
+            <Animated.View entering={FadeInDown.delay(400).duration(400)} style={styles.section}>
+              <Card>
+                <Text style={{ fontSize: 16, fontWeight: '700', color: theme.colors.text, marginBottom: 12 }}>Top Products</Text>
+                {stats.topProducts.map((p, i) => (
+                  <View key={p.name + i} style={[styles.rowItem, { borderBottomColor: theme.colors.border, borderBottomWidth: i < stats.topProducts.length - 1 ? 1 : 0 }]}>
+                    <View style={[styles.rankBadge, { backgroundColor: theme.colors.primary }]}>
+                      <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 12 }}>{i + 1}</Text>
+                    </View>
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <Text style={{ color: theme.colors.text, fontWeight: '600', fontSize: 14 }}>{p.name}</Text>
+                      <Text style={{ color: theme.colors.textSecondary, fontSize: 12, marginTop: 2 }}>{p.qty} sold</Text>
+                    </View>
+                    <Text style={{ color: theme.colors.primary, fontWeight: '700', fontSize: 14 }}>{formatMYR(p.revenue)}</Text>
+                  </View>
+                ))}
+              </Card>
+            </Animated.View>
+          )}
 
-            <TouchableOpacity
-              style={styles.actionCard}
-              onPress={() => router.push('/(tabs)/reports')}
-            >
-              <View style={[styles.actionIcon, { backgroundColor: '#F3E8FF' }]}>
-                <MaterialIcons name="assessment" size={28} color="#9333EA" />
-              </View>
-              <Text style={styles.actionText}>Reports</Text>
-            </TouchableOpacity>
-          </View>
-        </Animated.View>
+          {/* Low Stock Alert list */}
+          {stats.lowStockList.length > 0 && (
+            <Animated.View entering={FadeInDown.delay(450).duration(400)} style={styles.section}>
+              <Card>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+                  <MaterialIcons name="warning" size={20} color={theme.colors.error} />
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: theme.colors.text, marginLeft: 8, flex: 1 }}>Low Stock Alert</Text>
+                  <Badge label={`${stats.lowStockList.length}`} tone="error" />
+                </View>
+                {stats.lowStockList.slice(0, 5).map((p, i) => (
+                  <View key={p.id} style={[styles.rowItem, { borderBottomColor: theme.colors.border, borderBottomWidth: i < Math.min(5, stats.lowStockList.length) - 1 ? 1 : 0 }]}>
+                    <MaterialIcons name="inventory-2" size={20} color={theme.colors.error} />
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <Text style={{ color: theme.colors.text, fontWeight: '600', fontSize: 14 }}>{p.name}</Text>
+                      <Text style={{ color: theme.colors.textSecondary, fontSize: 12, marginTop: 2 }}>SKU: {p.sku} • Min: {p.minStock}</Text>
+                    </View>
+                    <Badge label={`${p.stock} left`} tone="error" />
+                  </View>
+                ))}
+              </Card>
+            </Animated.View>
+          )}
 
-        {/* Latest Sales */}
-        {data?.latest_sales && data.latest_sales.length > 0 && (
+          {/* Recent Sales */}
           <Animated.View entering={FadeInDown.delay(500).duration(400)} style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Latest Sales</Text>
-              <TouchableOpacity onPress={() => router.push('/(tabs)/sales')}>
-                <Text style={styles.seeAllText}>See All</Text>
-              </TouchableOpacity>
-            </View>
-
-            {data.latest_sales.map((sale, index) => (
-              <View key={sale.id} style={styles.saleCard}>
-                <View style={styles.saleLeft}>
-                  <View style={styles.saleIconContainer}>
-                    <MaterialIcons
-                      name={sale.payment_method === 'Cash' ? 'payments' : 'qr-code'}
-                      size={20}
-                      color={theme.colors.primary}
-                    />
-                  </View>
-                  <View style={styles.saleInfo}>
-                    <Text style={styles.saleProductName}>{sale.product_name}</Text>
-                    <Text style={styles.saleQuantity}>Qty: {sale.quantity}</Text>
-                  </View>
-                </View>
-                <View style={styles.saleRight}>
-                  <Text style={styles.saleAmount}>RM {sale.total_price.toFixed(2)}</Text>
-                  <Text style={styles.saleTime}>{formatTimeAgo(sale.created_at)}</Text>
-                </View>
+            <Card>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <Text style={{ fontSize: 16, fontWeight: '700', color: theme.colors.text }}>Recent Sales</Text>
+                <TouchableOpacity onPress={() => router.push('/(tabs)/pos')}>
+                  <Text style={{ color: theme.colors.primary, fontWeight: '600', fontSize: 13 }}>See All</Text>
+                </TouchableOpacity>
               </View>
-            ))}
+              {sales.slice(0, 5).length === 0 ? (
+                <Text style={{ color: theme.colors.textSecondary, fontSize: 13, textAlign: 'center', paddingVertical: 20 }}>No sales yet</Text>
+              ) : sales.slice(0, 5).map((s, i) => (
+                <View key={s.id} style={[styles.rowItem, { borderBottomColor: theme.colors.border, borderBottomWidth: i < Math.min(5, sales.length) - 1 ? 1 : 0 }]}>
+                  <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: theme.colors.primaryLight, alignItems: 'center', justifyContent: 'center' }}>
+                    <MaterialIcons name={s.paymentMethod === 'Cash' ? 'payments' : s.paymentMethod === 'QR' ? 'qr-code' : 'account-balance'} size={18} color={theme.colors.primary} />
+                  </View>
+                  <View style={{ flex: 1, marginLeft: 12 }}>
+                    <Text style={{ color: theme.colors.text, fontWeight: '600', fontSize: 14 }}>{s.saleNumber}</Text>
+                    <Text style={{ color: theme.colors.textSecondary, fontSize: 12, marginTop: 2 }}>{s.items.length} items • {s.paymentMethod}</Text>
+                  </View>
+                  <Text style={{ color: theme.colors.primary, fontWeight: '700', fontSize: 14 }}>{formatMYR(s.total)}</Text>
+                </View>
+              ))}
+            </Card>
           </Animated.View>
-        )}
 
-        {/* Demo Data Button */}
-        {data?.total_products === 0 && (
-          <Animated.View entering={FadeInDown.delay(600).duration(400)} style={styles.demoSection}>
-            <TouchableOpacity style={styles.demoButton} onPress={handleSeedSampleData} testID="load-sample-data-button">
-              <MaterialIcons name="cloud-download" size={20} color={theme.colors.primary} />
-              <Text style={styles.demoButtonText}>Load Sample Data</Text>
-            </TouchableOpacity>
+          {/* Recent Purchases */}
+          <Animated.View entering={FadeInDown.delay(550).duration(400)} style={styles.section}>
+            <Card>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <Text style={{ fontSize: 16, fontWeight: '700', color: theme.colors.text }}>Recent Purchases</Text>
+                <TouchableOpacity onPress={() => router.push('/purchases')}>
+                  <Text style={{ color: theme.colors.primary, fontWeight: '600', fontSize: 13 }}>See All</Text>
+                </TouchableOpacity>
+              </View>
+              {purchases.slice(0, 3).length === 0 ? (
+                <Text style={{ color: theme.colors.textSecondary, fontSize: 13, textAlign: 'center', paddingVertical: 20 }}>No purchases yet</Text>
+              ) : purchases.slice(0, 3).map((p, i) => (
+                <View key={p.id} style={[styles.rowItem, { borderBottomColor: theme.colors.border, borderBottomWidth: i < Math.min(3, purchases.length) - 1 ? 1 : 0 }]}>
+                  <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: '#F3E8FF', alignItems: 'center', justifyContent: 'center' }}>
+                    <MaterialIcons name="local-shipping" size={18} color="#9333EA" />
+                  </View>
+                  <View style={{ flex: 1, marginLeft: 12 }}>
+                    <Text style={{ color: theme.colors.text, fontWeight: '600', fontSize: 14 }}>{p.purchaseNumber}</Text>
+                    <Text style={{ color: theme.colors.textSecondary, fontSize: 12, marginTop: 2 }}>{p.supplierName || 'No supplier'} • {p.items.length} items</Text>
+                  </View>
+                  <Text style={{ color: theme.colors.text, fontWeight: '700', fontSize: 14 }}>{formatMYR(p.total)}</Text>
+                </View>
+              ))}
+            </Card>
           </Animated.View>
-        )}
+        </ScrollView>
+      </SafeAreaView>
+    </Screen>
+  );
+}
 
-        <View style={styles.bottomSpacing} />
-      </ScrollView>
-    </SafeAreaView>
+function MiniStat({ icon, iconBg, iconColor, label, value }: any) {
+  const { theme } = useTheme();
+  return (
+    <View style={[styles.miniStat, { backgroundColor: theme.colors.card, borderColor: theme.colors.border }]}>
+      <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: iconBg, alignItems: 'center', justifyContent: 'center' }}>
+        <MaterialIcons name={icon} size={20} color={iconColor} />
+      </View>
+      <View style={{ marginLeft: 10, flex: 1 }}>
+        <Text style={{ fontSize: 11, color: theme.colors.textSecondary }} numberOfLines={1}>{label}</Text>
+        <Text style={{ fontSize: 15, fontWeight: '800', color: theme.colors.text, marginTop: 2 }} numberOfLines={1}>{value}</Text>
+      </View>
+    </View>
+  );
+}
+
+function QuickAction({ icon, color, bg, label, onPress }: any) {
+  const { theme } = useTheme();
+  return (
+    <TouchableOpacity onPress={onPress} style={{ width: (width - 32 - 32 - 24) / 3, alignItems: 'center', padding: 8 }}>
+      <View style={{ width: 56, height: 56, borderRadius: 16, backgroundColor: bg, alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+        <MaterialIcons name={icon} size={26} color={color} />
+      </View>
+      <Text style={{ fontSize: 12, fontWeight: '600', color: theme.colors.text, textAlign: 'center' }}>{label}</Text>
+    </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-  },
-  centerContent: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  scrollView: {
-    flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-    backgroundColor: theme.colors.white,
-  },
-  greetingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  greetingEmoji: {
-    fontSize: 32,
-  },
-  greeting: {
-    fontSize: 14,
-    color: theme.colors.textSecondary,
-  },
-  userName: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-    marginTop: 2,
-  },
-  trialBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: theme.colors.primaryLight,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 16,
-    gap: 4,
-  },
-  trialText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: theme.colors.primary,
-  },
-  metricsContainer: {
-    padding: 16,
-    gap: 12,
-  },
-  metricRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  featuredCard: {
-    backgroundColor: theme.colors.primary,
-    borderRadius: 20,
-    padding: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    shadowColor: theme.colors.primary,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  metricIconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 16,
-  },
-  metricContent: {
-    flex: 1,
-  },
-  metricLabel: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.9)',
-    marginBottom: 6,
-  },
-  metricValueLarge: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: theme.colors.white,
-  },
-  metricCardSmall: {
-    flex: 1,
-    backgroundColor: theme.colors.white,
-    borderRadius: 16,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  metricIconSmall: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  metricContentSmall: {
-    flex: 1,
-  },
-  metricLabelSmall: {
-    fontSize: 12,
-    color: theme.colors.textSecondary,
-    marginBottom: 4,
-  },
-  metricValueSmall: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-  },
-  metricCard: {
-    backgroundColor: theme.colors.white,
-    borderRadius: 16,
-    padding: 16,
-  },
-  section: {
-    backgroundColor: theme.colors.white,
-    marginHorizontal: 16,
-    marginBottom: 16,
-    borderRadius: 20,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-  },
-  seeAllText: {
-    fontSize: 14,
-    color: theme.colors.primary,
-    fontWeight: '600',
-  },
-  actionsGrid: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  actionCard: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 16,
-    padding: 16,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  actionIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  actionText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: theme.colors.text,
-    textAlign: 'center',
-  },
-  saleCard: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-  },
-  saleLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  saleIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: theme.colors.primaryLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  saleInfo: {
-    flex: 1,
-  },
-  saleProductName: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: theme.colors.text,
-    marginBottom: 4,
-  },
-  saleQuantity: {
-    fontSize: 13,
-    color: theme.colors.textSecondary,
-  },
-  saleRight: {
-    alignItems: 'flex-end',
-  },
-  saleAmount: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: theme.colors.primary,
-    marginBottom: 4,
-  },
-  saleTime: {
-    fontSize: 12,
-    color: theme.colors.textSecondary,
-  },
-  demoSection: {
-    paddingHorizontal: 16,
-    marginBottom: 16,
-  },
-  demoButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: theme.colors.primaryLight,
-    padding: 16,
-    borderRadius: 16,
-    gap: 8,
-    borderWidth: 1,
-    borderColor: theme.colors.primary,
-    borderStyle: 'dashed',
-  },
-  demoButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: theme.colors.primary,
-  },
-  bottomSpacing: {
-    height: 20,
-  },
+  header: { flexDirection: 'row', alignItems: 'center', padding: 20, borderBottomWidth: 1 },
+  featured: { borderRadius: 20, padding: 20, shadowColor: '#2563EB', shadowOpacity: 0.25, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 8 },
+  miniStatsRow: { flexDirection: 'row', gap: 12, paddingHorizontal: 16, marginTop: 12 },
+  miniStat: { flex: 1, flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 16, borderWidth: 1 },
+  section: { marginHorizontal: 16, marginTop: 16 },
+  chart: { flexDirection: 'row', alignItems: 'flex-end', height: 180 },
+  rowItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12 },
+  rankBadge: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
 });

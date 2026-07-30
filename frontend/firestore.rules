@@ -1,0 +1,36 @@
+// Firestore Security Rules — deploy via Firebase console or `firebase deploy --only firestore:rules`.
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() { return request.auth != null; }
+    function userDoc() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
+    function myCompanyId() { return userDoc().companyId; }
+    function myRole() { return userDoc().role; }
+    function isAdmin() { return myRole() == 'admin'; }
+    function isManager() { return myRole() in ['admin', 'manager']; }
+
+    match /users/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || myCompanyId() == resource.data.companyId);
+      allow create: if isSignedIn() && request.auth.uid == uid;
+      allow update: if isSignedIn() && (request.auth.uid == uid || (myCompanyId() == resource.data.companyId && isAdmin()));
+      allow delete: if isSignedIn() && isAdmin();
+    }
+
+    match /companies/{companyId} {
+      allow read: if isSignedIn() && myCompanyId() == companyId;
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn() && myCompanyId() == companyId && isAdmin();
+    }
+
+    match /{col}/{docId} {
+      allow read: if isSignedIn() && resource.data.companyId == myCompanyId()
+        && col in ['products','categories','suppliers','customers','purchases','sales','expenses','stock_movements','notifications','settings'];
+      allow create: if isSignedIn() && request.resource.data.companyId == myCompanyId()
+        && col in ['products','categories','suppliers','customers','purchases','sales','expenses','stock_movements','notifications','settings'];
+      allow update: if isSignedIn() && resource.data.companyId == myCompanyId() && isManager()
+        && col in ['products','categories','suppliers','customers','purchases','sales','expenses','stock_movements','notifications','settings'];
+      allow delete: if isSignedIn() && resource.data.companyId == myCompanyId() && isAdmin()
+        && col in ['products','categories','suppliers','customers','purchases','sales','expenses','stock_movements','notifications','settings'];
+    }
+  }
+}

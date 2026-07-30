@@ -2,78 +2,70 @@ import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/src/contexts/AuthContext';
-import { theme } from '@/src/constants/theme';
+import { useTheme } from '@/src/contexts/ThemeContext';
+import { isFirebaseConfigured } from '@/src/firebase/config';
+import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import { LinearGradient } from 'expo-linear-gradient';
 
 export default function Index() {
-  const { user, loading } = useAuth();
+  const { user, profile, loading, firebaseReady } = useAuth();
+  const { theme } = useTheme();
   const router = useRouter();
 
   useEffect(() => {
-    if (!loading) {
-      if (user) {
-        router.replace('/(tabs)/dashboard');
-      } else {
+    if (loading) return;
+    if (!firebaseReady) return; // stay on splash showing "config needed"
+    setTimeout(() => {
+      if (!user) {
         router.replace('/(auth)/login');
+      } else if (!profile?.companyId) {
+        router.replace('/(setup)/company-setup');
+      } else {
+        router.replace('/(tabs)/dashboard');
       }
-    }
-  }, [loading, user]);
+    }, 800);
+  }, [loading, user, profile, firebaseReady]);
 
   return (
-    <View style={styles.container}>
-      <View style={styles.logoContainer}>
-        <View style={styles.logo}>
-          <Text style={styles.logoText}>B</Text>
-        </View>
-        <Text style={styles.appName}>BizFlow Lite</Text>
-        <Text style={styles.tagline}>Business Management Made Simple</Text>
+    <View style={{ flex: 1 }}>
+      <LinearGradient colors={['#2563EB', '#1E40AF']} style={StyleSheet.absoluteFill} />
+      <View style={styles.container}>
+        <Animated.View entering={FadeIn.duration(500)} style={styles.logoWrap}>
+          <View style={styles.logo}>
+            <Text style={styles.logoText}>B</Text>
+          </View>
+        </Animated.View>
+        <Animated.Text entering={FadeInDown.delay(200).duration(500)} style={styles.appName}>BizFlow Pro</Animated.Text>
+        <Animated.Text entering={FadeInDown.delay(400).duration(500)} style={styles.tagline}>
+          Business Management for Malaysian SMEs
+        </Animated.Text>
+        {!firebaseReady ? (
+          <Animated.View entering={FadeInDown.delay(600).duration(500)} style={styles.configWarn}>
+            <Text style={styles.configWarnTitle}>Firebase not configured</Text>
+            <Text style={styles.configWarnBody}>
+              Add your Firebase credentials to /app/frontend/.env (see .env.example) and restart Expo.
+            </Text>
+          </Animated.View>
+        ) : (
+          <ActivityIndicator size="small" color="#FFFFFF" style={{ marginTop: 30 }} />
+        )}
       </View>
-      <ActivityIndicator size="large" color={theme.colors.primary} style={styles.loader} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logoContainer: {
-    alignItems: 'center',
-    marginBottom: 40,
-  },
+  container: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
+  logoWrap: { marginBottom: 24 },
   logo: {
-    width: 100,
-    height: 100,
-    borderRadius: 20,
-    backgroundColor: theme.colors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 8,
+    width: 96, height: 96, borderRadius: 24, backgroundColor: '#FFFFFF',
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 16, elevation: 12,
   },
-  logoText: {
-    fontSize: 48,
-    fontWeight: 'bold',
-    color: theme.colors.primary,
-  },
-  appName: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: theme.colors.white,
-    marginBottom: 8,
-  },
-  tagline: {
-    fontSize: 14,
-    color: theme.colors.white,
-    opacity: 0.9,
-  },
-  loader: {
-    marginTop: 20,
-  },
+  logoText: { fontSize: 52, fontWeight: '900', color: '#2563EB' },
+  appName: { fontSize: 32, fontWeight: '800', color: '#FFFFFF', letterSpacing: -0.5 },
+  tagline: { fontSize: 14, color: 'rgba(255,255,255,0.85)', marginTop: 6 },
+  configWarn: { marginTop: 40, backgroundColor: 'rgba(255,255,255,0.15)', padding: 16, borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)' },
+  configWarnTitle: { color: '#FFFFFF', fontWeight: '700', fontSize: 14, marginBottom: 4 },
+  configWarnBody: { color: 'rgba(255,255,255,0.9)', fontSize: 12, lineHeight: 18, textAlign: 'center' },
 });

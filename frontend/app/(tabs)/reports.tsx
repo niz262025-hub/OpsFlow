@@ -1,479 +1,228 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  ActivityIndicator,
-  Dimensions,
-} from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Dimensions, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useAuth } from '@/src/contexts/AuthContext';
-import { useData } from '@/src/contexts/DataContext';
-import { theme } from '@/src/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
+import Animated, { FadeInDown } from 'react-native-reanimated';
+import { useTheme } from '@/src/contexts/ThemeContext';
+import { useData } from '@/src/contexts/DataContext';
+import { formatMYR } from '@/src/utils/currency';
+import { Button, Card, EmptyState, Header, Screen } from '@/src/components/UI';
+import { generateFinancialReportPDF } from '@/src/utils/exports/pdf';
+import { exportFinancialWorkbook, exportSalesDetailXlsx, exportSalesXlsx, exportPurchasesXlsx, exportExpensesXlsx, exportProductsXlsx } from '@/src/utils/exports/excel';
 
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 const { width } = Dimensions.get('window');
 
-interface DailySale {
-  date: string;
-  total: number;
-}
-
-interface MonthlySale {
-  month: string;
-  total: number;
-}
-
-interface TopProduct {
-  product_name: string;
-  quantity: number;
-  revenue: number;
-}
+type Range = 'today' | 'week' | 'month' | 'year';
 
 export default function Reports() {
-  const { token } = useAuth();
-  const { sales } = useData();
-  const [dailySales, setDailySales] = useState<DailySale[]>([]);
-  const [monthlySales, setMonthlySales] = useState<MonthlySale[]>([]);
-  const [topProducts, setTopProducts] = useState<TopProduct[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { theme } = useTheme();
+  const { sales, purchases, expenses, products, company } = useData();
+  const [range, setRange] = useState<Range>('month');
+  const [exporting, setExporting] = useState(false);
 
-  // Re-fetch aggregated reports whenever the sales list changes
-  // (a new sale in context.sales -> reports auto-refresh)
-  useEffect(() => {
-    fetchReports();
-  }, [sales.length]);
+  const startTs = useMemo(() => {
+    const n = new Date();
+    if (range === 'today') return new Date(n.getFullYear(), n.getMonth(), n.getDate()).getTime();
+    if (range === 'week') return n.getTime() - 7 * 86400000;
+    if (range === 'month') return new Date(n.getFullYear(), n.getMonth(), 1).getTime();
+    return new Date(n.getFullYear(), 0, 1).getTime();
+  }, [range]);
 
-  const fetchReports = async () => {
-    try {
-      const [dailyRes, monthlyRes, topRes] = await Promise.all([
-        fetch(`${API_URL}/api/reports/daily-sales?days=7`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
-        fetch(`${API_URL}/api/reports/monthly-sales?months=6`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
-        fetch(`${API_URL}/api/reports/top-products?limit=5`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
-      ]);
+  const inRange = <T extends { createdAt?: any; date?: any }>(list: T[], useDate = false): T[] =>
+    list.filter((x) => {
+      const t = useDate ? (x.date?.toMillis?.() || (x.date instanceof Date ? x.date.getTime() : 0)) : (x.createdAt?.toMillis?.() || 0);
+      return t >= startTs;
+    });
 
-      if (dailyRes.ok && monthlyRes.ok && topRes.ok) {
-        const daily = await dailyRes.json();
-        const monthly = await monthlyRes.json();
-        const top = await topRes.json();
-        
-        setDailySales(daily);
-        setMonthlySales(monthly);
-        setTopProducts(top);
+  const rSales = inRange(sales);
+  const rPurchases = inRange(purchases);
+  const rExpenses = inRange(expenses, true);
+
+  const revenue = rSales.reduce((s, x) => s + x.total, 0);
+  const cogs = rSales.reduce((s, x) => s + x.items.reduce((c, i) => c + i.costPrice * i.quantity, 0), 0);
+  const grossProfit = revenue - cogs;
+  const expenseTotal = rExpenses.reduce((s, x) => s + x.amount, 0);
+  const netProfit = grossProfit - expenseTotal;
+  const purchaseTotal = rPurchases.reduce((s, x) => s + x.total, 0);
+
+  const paymentBreakdown = { Cash: 0, QR: 0, Transfer: 0 };
+  for (const s of rSales) paymentBreakdown[s.paymentMethod] = (paymentBreakdown[s.paymentMethod] || 0) + s.total;
+
+  const topProducts = useMemo(() => {
+    const map: Record<string, { name: string; qty: number; revenue: number }> = {};
+    for (const s of rSales) {
+      for (const i of s.items) {
+        if (!map[i.productId]) map[i.productId] = { name: i.productName, qty: 0, revenue: 0 };
+        map[i.productId].qty += i.quantity;
+        map[i.productId].revenue += i.total;
       }
-    } catch (error) {
-      console.error('Error fetching reports:', error);
-    } finally {
-      setLoading(false);
     }
+    return Object.values(map).sort((a, b) => b.revenue - a.revenue).slice(0, 10);
+  }, [rSales]);
+
+  const lowStock = products.filter((p) => p.status === 'active' && p.stock <= (p.minStock || 10));
+
+  const rangeLabel = range.charAt(0).toUpperCase() + range.slice(1);
+  const startDate = new Date(startTs);
+  const endDate = new Date();
+
+  const exportPdf = async () => {
+    setExporting(true);
+    try {
+      await generateFinancialReportPDF({
+        company, rangeLabel, from: startDate, to: endDate,
+        revenue, cogs, grossProfit, expenses: expenseTotal, netProfit, purchaseTotal, paymentBreakdown, topProducts,
+      });
+    } catch (e: any) { Alert.alert('Export Failed', e?.message || 'Could not generate PDF'); }
+    finally { setExporting(false); }
   };
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-MY', { day: '2-digit', month: 'short' });
+  const exportXlsx = async () => {
+    setExporting(true);
+    try {
+      await exportFinancialWorkbook({
+        sales: rSales, purchases: rPurchases, expenses: rExpenses,
+        products, rangeLabel,
+      });
+    } catch (e: any) { Alert.alert('Export Failed', e?.message || 'Could not generate Excel'); }
+    finally { setExporting(false); }
   };
 
-  const formatMonth = (monthString: string) => {
-    const [year, month] = monthString.split('-');
-    const date = new Date(parseInt(year), parseInt(month) - 1);
-    return date.toLocaleDateString('en-MY', { month: 'short', year: 'numeric' });
+  const exportSpecific = () => {
+    Alert.alert('Export as Excel', 'Choose data to export', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Sales (summary)', onPress: () => exportSalesXlsx(rSales, `sales-${rangeLabel}`).catch((e) => Alert.alert('Error', e?.message)) },
+      { text: 'Sales (line items)', onPress: () => exportSalesDetailXlsx(rSales, `sales-detail-${rangeLabel}`).catch((e) => Alert.alert('Error', e?.message)) },
+      { text: 'Purchases', onPress: () => exportPurchasesXlsx(rPurchases, `purchases-${rangeLabel}`).catch((e) => Alert.alert('Error', e?.message)) },
+      { text: 'Expenses', onPress: () => exportExpensesXlsx(rExpenses, `expenses-${rangeLabel}`).catch((e) => Alert.alert('Error', e?.message)) },
+      { text: 'Inventory', onPress: () => exportProductsXlsx(products, 'products').catch((e) => Alert.alert('Error', e?.message)) },
+    ]);
   };
-
-  const renderSimpleBarChart = (data: DailySale[]) => {
-    if (data.length === 0) {
-      return (
-        <View style={styles.emptyChart}>
-          <Text style={styles.emptyChartText}>No sales data available</Text>
-        </View>
-      );
-    }
-
-    const maxValue = Math.max(...data.map((d) => d.total), 1);
-    const chartHeight = 200;
-    const barWidth = (width - 80) / data.length - 8;
-
-    return (
-      <View style={styles.chartContainer}>
-        <View style={styles.chart}>
-          {data.map((item, index) => {
-            const barHeight = (item.total / maxValue) * chartHeight;
-            return (
-              <View key={index} style={styles.barContainer}>
-                <View style={styles.barWrapper}>
-                  <View style={[styles.bar, { height: barHeight || 4 }]}>
-                    <Text style={styles.barValue}>
-                      {item.total > 0 ? item.total.toFixed(0) : ''}
-                    </Text>
-                  </View>
-                </View>
-                <Text style={styles.barLabel}>{formatDate(item.date)}</Text>
-              </View>
-            );
-          })}
-        </View>
-      </View>
-    );
-  };
-
-  const renderMonthlyChart = (data: MonthlySale[]) => {
-    if (data.length === 0) {
-      return (
-        <View style={styles.emptyChart}>
-          <Text style={styles.emptyChartText}>No monthly data available</Text>
-        </View>
-      );
-    }
-
-    const maxValue = Math.max(...data.map((d) => d.total), 1);
-    const chartHeight = 200;
-
-    return (
-      <View style={styles.chartContainer}>
-        <View style={styles.chart}>
-          {data.map((item, index) => {
-            const barHeight = (item.total / maxValue) * chartHeight;
-            return (
-              <View key={index} style={styles.barContainer}>
-                <View style={styles.barWrapper}>
-                  <View style={[styles.bar, { height: barHeight || 4 }]}>
-                    <Text style={styles.barValue}>
-                      {item.total > 0 ? item.total.toFixed(0) : ''}
-                    </Text>
-                  </View>
-                </View>
-                <Text style={styles.barLabel}>{formatMonth(item.month)}</Text>
-              </View>
-            );
-          })}
-        </View>
-      </View>
-    );
-  };
-
-  const getTotalDailySales = () => {
-    return dailySales.reduce((sum, item) => sum + item.total, 0);
-  };
-
-  const getTotalMonthlySales = () => {
-    return monthlySales.reduce((sum, item) => sum + item.total, 0);
-  };
-
-  if (loading) {
-    return (
-      <SafeAreaView style={[styles.container, styles.centerContent]}>
-        <ActivityIndicator size="large" color={theme.colors.primary} />
-      </SafeAreaView>
-    );
-  }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Reports</Text>
-        <MaterialIcons name="assessment" size={24} color={theme.colors.primary} />
-      </View>
+    <Screen>
+      <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+        <Header title="Reports" subtitle="Sales, profit & inventory insights" right={
+          <TouchableOpacity onPress={exportSpecific} style={{ padding: 6 }}>
+            <MaterialIcons name="download" size={24} color={theme.colors.primary} />
+          </TouchableOpacity>
+        } />
+        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, marginBottom: 16 }}>
+            {(['today', 'week', 'month', 'year'] as Range[]).map((r) => (
+              <TouchableOpacity key={r} onPress={() => setRange(r)} style={[styles.chip, { backgroundColor: range === r ? theme.colors.primary : theme.colors.cardMuted }]}>
+                <Text style={{ color: range === r ? '#FFF' : theme.colors.text, fontWeight: '700', fontSize: 13, textTransform: 'capitalize' }}>{r}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
 
-      <ScrollView style={styles.scrollView}>
-        {/* Daily Sales */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <MaterialIcons name="today" size={24} color={theme.colors.primary} />
-            <Text style={styles.sectionTitle}>Daily Sales (Last 7 Days)</Text>
-          </View>
-          <View style={styles.totalCard}>
-            <Text style={styles.totalLabel}>Total Sales</Text>
-            <Text style={styles.totalValue}>RM {getTotalDailySales().toFixed(2)}</Text>
-          </View>
-          {renderSimpleBarChart(dailySales)}
-        </View>
-
-        {/* Monthly Sales */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <MaterialIcons name="calendar-today" size={24} color={theme.colors.primary} />
-            <Text style={styles.sectionTitle}>Monthly Sales</Text>
-          </View>
-          <View style={styles.totalCard}>
-            <Text style={styles.totalLabel}>Total Sales</Text>
-            <Text style={styles.totalValue}>RM {getTotalMonthlySales().toFixed(2)}</Text>
-          </View>
-          {renderMonthlyChart(monthlySales)}
-        </View>
-
-        {/* Top Products */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <MaterialIcons name="star" size={24} color={theme.colors.warning} />
-            <Text style={styles.sectionTitle}>Top Selling Products</Text>
+          {/* Export actions */}
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+            <View style={{ flex: 1 }}><Button title="Export PDF" onPress={exportPdf} loading={exporting} icon="picture-as-pdf" fullWidth testID="report-export-pdf-button" /></View>
+            <View style={{ flex: 1 }}><Button title="Export Excel" onPress={exportXlsx} loading={exporting} variant="secondary" icon="grid-on" fullWidth testID="report-export-excel-button" /></View>
           </View>
 
-          {topProducts.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyText}>No sales data available</Text>
-            </View>
-          ) : (
-            topProducts.map((product, index) => (
-              <View key={index} style={styles.productCard}>
-                <View style={styles.rankBadge}>
-                  <Text style={styles.rankText}>#{index + 1}</Text>
-                </View>
-                <View style={styles.productInfo}>
-                  <Text style={styles.productName}>{product.product_name}</Text>
-                  <View style={styles.productStats}>
-                    <View style={styles.statItem}>
-                      <MaterialIcons name="shopping-cart" size={14} color={theme.colors.textSecondary} />
-                      <Text style={styles.statText}>{product.quantity} sold</Text>
-                    </View>
-                    <View style={styles.statDivider} />
-                    <View style={styles.statItem}>
-                      <MaterialIcons name="monetization-on" size={14} color={theme.colors.textSecondary} />
-                      <Text style={styles.statText}>RM {product.revenue.toFixed(2)}</Text>
-                    </View>
+          {/* P&L Summary */}
+          <Animated.View entering={FadeInDown.duration(400)}>
+            <Card style={{ marginBottom: 12 }}>
+              <Text style={{ fontSize: 16, fontWeight: '800', color: theme.colors.text, marginBottom: 12 }}>Profit & Loss</Text>
+              <Row label="Revenue (Sales)" value={formatMYR(revenue)} tone="positive" />
+              <Row label="COGS" value={`- ${formatMYR(cogs)}`} tone="negative" />
+              <View style={{ height: 1, backgroundColor: theme.colors.border, marginVertical: 8 }} />
+              <Row label="Gross Profit" value={formatMYR(grossProfit)} bold />
+              <Row label="Expenses" value={`- ${formatMYR(expenseTotal)}`} tone="negative" />
+              <View style={{ height: 1, backgroundColor: theme.colors.border, marginVertical: 8 }} />
+              <Row label="Net Profit" value={formatMYR(netProfit)} bold big tone={netProfit >= 0 ? 'positive' : 'negative'} />
+            </Card>
+          </Animated.View>
+
+          {/* Cash Flow */}
+          <Animated.View entering={FadeInDown.delay(50).duration(400)}>
+            <Card style={{ marginBottom: 12 }}>
+              <Text style={{ fontSize: 16, fontWeight: '800', color: theme.colors.text, marginBottom: 12 }}>Cash Flow</Text>
+              <Row label="Cash In (Sales)" value={formatMYR(revenue)} tone="positive" />
+              <Row label="Cash Out (Purchases)" value={`- ${formatMYR(purchaseTotal)}`} tone="negative" />
+              <Row label="Cash Out (Expenses)" value={`- ${formatMYR(expenseTotal)}`} tone="negative" />
+              <View style={{ height: 1, backgroundColor: theme.colors.border, marginVertical: 8 }} />
+              <Row label="Net Cash Flow" value={formatMYR(revenue - purchaseTotal - expenseTotal)} bold big />
+            </Card>
+          </Animated.View>
+
+          {/* Payment breakdown */}
+          <Animated.View entering={FadeInDown.delay(100).duration(400)}>
+            <Card style={{ marginBottom: 12 }}>
+              <Text style={{ fontSize: 16, fontWeight: '800', color: theme.colors.text, marginBottom: 12 }}>Sales by Payment</Text>
+              {Object.entries(paymentBreakdown).map(([k, v]) => (
+                <View key={k} style={{ marginBottom: 8 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <Text style={{ fontSize: 13, color: theme.colors.text }}>{k}</Text>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: theme.colors.text }}>{formatMYR(v)}</Text>
+                  </View>
+                  <View style={{ height: 6, backgroundColor: theme.colors.cardMuted, borderRadius: 3 }}>
+                    <View style={{ height: 6, backgroundColor: theme.colors.primary, borderRadius: 3, width: revenue > 0 ? `${(v / revenue) * 100}%` : '0%' }} />
                   </View>
                 </View>
-              </View>
-            ))
-          )}
-        </View>
+              ))}
+            </Card>
+          </Animated.View>
 
-        {/* Summary Stats */}
-        <View style={styles.summarySection}>
-          <Text style={styles.summaryTitle}>Summary</Text>
-          <View style={styles.summaryGrid}>
-            <View style={styles.summaryCard}>
-              <MaterialIcons name="trending-up" size={28} color={theme.colors.success} />
-              <Text style={styles.summaryValue}>
-                {dailySales.length > 0 ? dailySales.length : 0}
-              </Text>
-              <Text style={styles.summaryLabel}>Days Active</Text>
-            </View>
-            <View style={styles.summaryCard}>
-              <MaterialIcons name="inventory" size={28} color={theme.colors.primary} />
-              <Text style={styles.summaryValue}>{topProducts.length}</Text>
-              <Text style={styles.summaryLabel}>Top Products</Text>
-            </View>
-          </View>
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+          {/* Top selling */}
+          <Animated.View entering={FadeInDown.delay(150).duration(400)}>
+            <Card style={{ marginBottom: 12 }}>
+              <Text style={{ fontSize: 16, fontWeight: '800', color: theme.colors.text, marginBottom: 12 }}>Top Selling Products</Text>
+              {topProducts.length === 0 ? <Text style={{ color: theme.colors.textSecondary, fontSize: 13, textAlign: 'center', paddingVertical: 12 }}>No sales in this period</Text> :
+                topProducts.map((p, i) => (
+                  <View key={p.name + i} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: i < topProducts.length - 1 ? 1 : 0, borderBottomColor: theme.colors.border }}>
+                    <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: theme.colors.primary, alignItems: 'center', justifyContent: 'center' }}>
+                      <Text style={{ color: '#FFF', fontSize: 12, fontWeight: '800' }}>{i + 1}</Text>
+                    </View>
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '600', color: theme.colors.text }} numberOfLines={1}>{p.name}</Text>
+                      <Text style={{ fontSize: 11, color: theme.colors.textSecondary, marginTop: 2 }}>{p.qty} sold</Text>
+                    </View>
+                    <Text style={{ fontSize: 14, fontWeight: '800', color: theme.colors.primary }}>{formatMYR(p.revenue)}</Text>
+                  </View>
+                ))}
+            </Card>
+          </Animated.View>
+
+          {/* Low stock */}
+          <Animated.View entering={FadeInDown.delay(200).duration(400)}>
+            <Card>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <Text style={{ fontSize: 16, fontWeight: '800', color: theme.colors.text }}>Low Stock Report</Text>
+                <Text style={{ fontSize: 12, color: theme.colors.error, fontWeight: '700' }}>{lowStock.length} items</Text>
+              </View>
+              {lowStock.length === 0 ? <Text style={{ color: theme.colors.textSecondary, fontSize: 13, textAlign: 'center', paddingVertical: 12 }}>No low-stock products 🎉</Text> :
+                lowStock.slice(0, 10).map((p, i) => (
+                  <View key={p.id} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: i < Math.min(10, lowStock.length) - 1 ? 1 : 0, borderBottomColor: theme.colors.border }}>
+                    <MaterialIcons name="warning" size={18} color={theme.colors.error} />
+                    <View style={{ flex: 1, marginLeft: 10 }}>
+                      <Text style={{ fontSize: 13, fontWeight: '600', color: theme.colors.text }}>{p.name}</Text>
+                      <Text style={{ fontSize: 11, color: theme.colors.textSecondary, marginTop: 2 }}>SKU: {p.sku}</Text>
+                    </View>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: theme.colors.error }}>{p.stock} / {p.minStock}</Text>
+                  </View>
+                ))}
+            </Card>
+          </Animated.View>
+        </ScrollView>
+      </SafeAreaView>
+    </Screen>
+  );
+}
+
+function Row({ label, value, bold, big, tone }: any) {
+  const { theme } = useTheme();
+  const color = tone === 'positive' ? theme.colors.success : tone === 'negative' ? theme.colors.error : theme.colors.text;
+  return (
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: big ? 4 : 2 }}>
+      <Text style={{ fontSize: big ? 15 : 13, color: theme.colors.textSecondary, fontWeight: bold ? '700' : '500' }}>{label}</Text>
+      <Text style={{ fontSize: big ? 20 : 14, color, fontWeight: bold ? '800' : '600' }}>{value}</Text>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.secondary,
-  },
-  centerContent: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    backgroundColor: theme.colors.white,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  section: {
-    backgroundColor: theme.colors.white,
-    padding: 20,
-    marginTop: 8,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-    gap: 8,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-  },
-  totalCard: {
-    backgroundColor: theme.colors.primaryLight,
-    padding: 16,
-    borderRadius: theme.borderRadius.md,
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  totalLabel: {
-    fontSize: 14,
-    color: theme.colors.textSecondary,
-    marginBottom: 4,
-  },
-  totalValue: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: theme.colors.primary,
-  },
-  chartContainer: {
-    marginTop: 8,
-  },
-  chart: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    height: 220,
-    paddingBottom: 20,
-  },
-  barContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-  },
-  barWrapper: {
-    width: '100%',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    height: 200,
-  },
-  bar: {
-    width: '80%',
-    backgroundColor: theme.colors.primary,
-    borderTopLeftRadius: 6,
-    borderTopRightRadius: 6,
-    justifyContent: 'flex-start',
-    alignItems: 'center',
-    paddingTop: 4,
-  },
-  barValue: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: theme.colors.white,
-  },
-  barLabel: {
-    fontSize: 10,
-    color: theme.colors.textSecondary,
-    marginTop: 8,
-    textAlign: 'center',
-  },
-  emptyChart: {
-    height: 200,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: theme.colors.card,
-    borderRadius: theme.borderRadius.md,
-  },
-  emptyChartText: {
-    fontSize: 14,
-    color: theme.colors.textSecondary,
-  },
-  productCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: theme.colors.card,
-    borderRadius: theme.borderRadius.md,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  rankBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: theme.colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 16,
-  },
-  rankText: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: theme.colors.white,
-  },
-  productInfo: {
-    flex: 1,
-  },
-  productName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: theme.colors.text,
-    marginBottom: 8,
-  },
-  productStats: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  statItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  statText: {
-    fontSize: 12,
-    color: theme.colors.textSecondary,
-  },
-  statDivider: {
-    width: 1,
-    height: 12,
-    backgroundColor: theme.colors.border,
-    marginHorizontal: 12,
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: 40,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: theme.colors.textSecondary,
-  },
-  summarySection: {
-    padding: 20,
-    backgroundColor: theme.colors.white,
-    marginTop: 8,
-    marginBottom: 20,
-  },
-  summaryTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-    marginBottom: 16,
-  },
-  summaryGrid: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  summaryCard: {
-    flex: 1,
-    backgroundColor: theme.colors.card,
-    padding: 20,
-    borderRadius: theme.borderRadius.md,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  summaryValue: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-    marginTop: 8,
-  },
-  summaryLabel: {
-    fontSize: 12,
-    color: theme.colors.textSecondary,
-    marginTop: 4,
-    textAlign: 'center',
-  },
+  chip: { paddingHorizontal: 16, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
 });

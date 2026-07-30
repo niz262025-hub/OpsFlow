@@ -1,345 +1,90 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  Alert,
-  ActivityIndicator,
-} from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/src/contexts/AuthContext';
-import { theme } from '@/src/constants/theme';
-import { MaterialIcons } from '@expo/vector-icons';
+import { useTheme } from '@/src/contexts/ThemeContext';
+import { Button, Input } from '@/src/components/UI';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 
 export default function Register() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [companyName, setCompanyName] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [errors, setErrors] = useState<{
-    email?: string;
-    password?: string;
-    companyName?: string;
-  }>({});
+  const { theme } = useTheme();
   const { register } = useAuth();
   const router = useRouter();
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [errors, setErrors] = useState<any>({});
+  const [loading, setLoading] = useState(false);
 
-  const validateEmail = (email: string) => {
-    const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return re.test(email);
-  };
-
-  const validateForm = () => {
-    const newErrors: { email?: string; password?: string; companyName?: string } = {};
-
-    if (!companyName.trim()) {
-      newErrors.companyName = 'Company name is required';
-    } else if (companyName.trim().length < 2) {
-      newErrors.companyName = 'Company name too short';
-    }
-
-    if (!email.trim()) {
-      newErrors.email = 'Email is required';
-    } else if (!validateEmail(email.trim())) {
-      newErrors.email = 'Please enter a valid email';
-    }
-
-    if (!password) {
-      newErrors.password = 'Password is required';
-    } else if (password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters';
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+  const validate = () => {
+    const e: any = {};
+    if (!name.trim()) e.name = 'Full name is required';
+    if (!email.trim()) e.email = 'Email is required';
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) e.email = 'Invalid email';
+    if (!password) e.password = 'Password is required';
+    else if (password.length < 6) e.password = 'At least 6 characters';
+    setErrors(e);
+    return Object.keys(e).length === 0;
   };
 
   const handleRegister = async () => {
-    if (!validateForm()) return;
-
+    if (!validate()) return;
     setLoading(true);
     try {
-      await register(email.trim(), password, companyName.trim());
-      router.replace('/(tabs)/dashboard');
-    } catch (error: any) {
-      Alert.alert('Registration Failed', error.message || 'Please try again');
+      await register(email, password, name.trim());
+    } catch (err: any) {
+      const code = err?.code || '';
+      let msg = err?.message || 'Registration failed';
+      if (code === 'auth/email-already-in-use') msg = 'Email already registered. Try signing in.';
+      else if (code === 'auth/weak-password') msg = 'Password too weak (min 6 characters).';
+      Alert.alert('Registration Failed', msg);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <Animated.View entering={FadeInDown.duration(500)} style={styles.header}>
-          <View style={styles.logo}>
-            <Text style={styles.logoText}>B</Text>
-          </View>
-          <Text style={styles.appName}>BizFlow Lite</Text>
-          <Text style={styles.title}>Create Account</Text>
-          <Text style={styles.subtitle}>Start your 14-day free trial today</Text>
-        </Animated.View>
-
-        <Animated.View entering={FadeInUp.delay(200).duration(500)} style={styles.form}>
-          <View style={styles.inputWrapper}>
-            <Text style={styles.inputLabel}>Company Name</Text>
-            <View style={[styles.inputContainer, errors.companyName && styles.inputError]}>
-              <MaterialIcons name="business" size={20} color={theme.colors.textSecondary} />
-              <TextInput
-                style={styles.input}
-                placeholder="Your Company"
-                value={companyName}
-                onChangeText={(text) => {
-                  setCompanyName(text);
-                  if (errors.companyName) setErrors({ ...errors, companyName: undefined });
-                }}
-                placeholderTextColor={theme.colors.textSecondary}
-                testID="register-company-input"
-              />
+    <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.background }} edges={['top']}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          <Animated.View entering={FadeInDown.duration(500)} style={styles.header}>
+            <View style={[styles.logo, { backgroundColor: theme.colors.primary }]}>
+              <Text style={styles.logoText}>B</Text>
             </View>
-            {errors.companyName && <Text style={styles.errorText}>{errors.companyName}</Text>}
-          </View>
+            <Text style={[styles.appName, { color: theme.colors.primary }]}>BizFlow Pro</Text>
+            <Text style={[styles.title, { color: theme.colors.text }]}>Create Account</Text>
+            <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>Start managing your business today</Text>
+          </Animated.View>
 
-          <View style={styles.inputWrapper}>
-            <Text style={styles.inputLabel}>Email Address</Text>
-            <View style={[styles.inputContainer, errors.email && styles.inputError]}>
-              <MaterialIcons name="email" size={20} color={theme.colors.textSecondary} />
-              <TextInput
-                style={styles.input}
-                placeholder="you@company.com"
-                value={email}
-                onChangeText={(text) => {
-                  setEmail(text);
-                  if (errors.email) setErrors({ ...errors, email: undefined });
-                }}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                placeholderTextColor={theme.colors.textSecondary}
-                testID="register-email-input"
-              />
-            </View>
-            {errors.email && <Text style={styles.errorText}>{errors.email}</Text>}
-          </View>
-
-          <View style={styles.inputWrapper}>
-            <Text style={styles.inputLabel}>Password</Text>
-            <View style={[styles.inputContainer, errors.password && styles.inputError]}>
-              <MaterialIcons name="lock" size={20} color={theme.colors.textSecondary} />
-              <TextInput
-                style={styles.input}
-                placeholder="At least 6 characters"
-                value={password}
-                onChangeText={(text) => {
-                  setPassword(text);
-                  if (errors.password) setErrors({ ...errors, password: undefined });
-                }}
-                secureTextEntry={!showPassword}
-                placeholderTextColor={theme.colors.textSecondary}
-                testID="register-password-input"
-              />
-              <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-                <MaterialIcons
-                  name={showPassword ? 'visibility' : 'visibility-off'}
-                  size={20}
-                  color={theme.colors.textSecondary}
-                />
+          <Animated.View entering={FadeInUp.delay(200).duration(500)}>
+            <Input label="Full Name" value={name} onChangeText={(v) => { setName(v); if (errors.name) setErrors({ ...errors, name: undefined }); }}
+              placeholder="Your name" icon="person" error={errors.name} testID="register-name-input" />
+            <Input label="Email" value={email} onChangeText={(v) => { setEmail(v); if (errors.email) setErrors({ ...errors, email: undefined }); }}
+              placeholder="you@company.com" icon="email" keyboardType="email-address" autoCapitalize="none" error={errors.email} testID="register-email-input" />
+            <Input label="Password" value={password} onChangeText={(v) => { setPassword(v); if (errors.password) setErrors({ ...errors, password: undefined }); }}
+              placeholder="At least 6 characters" icon="lock" secureTextEntry error={errors.password} testID="register-password-input" />
+            <Button title="Create Account" onPress={handleRegister} loading={loading} fullWidth size="lg" icon="check" testID="register-submit-button" />
+            <View style={styles.footer}>
+              <Text style={{ color: theme.colors.textSecondary, fontSize: 14 }}>Already have an account? </Text>
+              <TouchableOpacity onPress={() => router.back()}>
+                <Text style={{ color: theme.colors.primary, fontWeight: '700', fontSize: 14 }}>Sign In</Text>
               </TouchableOpacity>
             </View>
-            {errors.password && <Text style={styles.errorText}>{errors.password}</Text>}
-          </View>
-
-          {/* Trial Info Card */}
-          <View style={styles.trialCard}>
-            <MaterialIcons name="card-giftcard" size={24} color={theme.colors.primary} />
-            <View style={styles.trialInfo}>
-              <Text style={styles.trialTitle}>14-Day Free Trial</Text>
-              <Text style={styles.trialSubtitle}>No credit card required</Text>
-            </View>
-          </View>
-
-          <TouchableOpacity
-            style={[styles.registerButton, loading && styles.buttonDisabled]}
-            onPress={handleRegister}
-            disabled={loading}
-            testID="register-submit-button"
-          >
-            {loading ? (
-              <ActivityIndicator color={theme.colors.white} />
-            ) : (
-              <>
-                <Text style={styles.registerButtonText}>Create Account</Text>
-                <MaterialIcons name="arrow-forward" size={20} color={theme.colors.white} />
-              </>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.loginLink}
-            onPress={() => router.back()}
-            testID="go-to-login-button"
-          >
-            <Text style={styles.loginLinkText}>
-              Already have an account? <Text style={styles.loginLinkBold}>Sign In</Text>
-            </Text>
-          </TouchableOpacity>
-        </Animated.View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+          </Animated.View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    paddingHorizontal: 24,
-    paddingVertical: 40,
-    justifyContent: 'center',
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: 30,
-  },
-  logo: {
-    width: 80,
-    height: 80,
-    borderRadius: 20,
-    backgroundColor: theme.colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-    shadowColor: theme.colors.primary,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  logoText: {
-    fontSize: 40,
-    fontWeight: 'bold',
-    color: theme.colors.white,
-  },
-  appName: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: theme.colors.primary,
-    marginBottom: 16,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: theme.colors.textSecondary,
-  },
-  form: {
-    width: '100%',
-  },
-  inputWrapper: {
-    marginBottom: 14,
-  },
-  inputLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: theme.colors.text,
-    marginBottom: 8,
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: theme.colors.white,
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderWidth: 1.5,
-    borderColor: theme.colors.border,
-  },
-  inputError: {
-    borderColor: theme.colors.error,
-  },
-  input: {
-    flex: 1,
-    marginLeft: 12,
-    fontSize: 15,
-    color: theme.colors.text,
-  },
-  errorText: {
-    fontSize: 12,
-    color: theme.colors.error,
-    marginTop: 4,
-    marginLeft: 4,
-  },
-  trialCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: theme.colors.primaryLight,
-    padding: 14,
-    borderRadius: 14,
-    marginVertical: 12,
-    gap: 12,
-  },
-  trialInfo: {
-    flex: 1,
-  },
-  trialTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: theme.colors.text,
-  },
-  trialSubtitle: {
-    fontSize: 12,
-    color: theme.colors.textSecondary,
-    marginTop: 2,
-  },
-  registerButton: {
-    flexDirection: 'row',
-    backgroundColor: theme.colors.primary,
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    marginTop: 8,
-    shadowColor: theme.colors.primary,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 6,
-  },
-  buttonDisabled: {
-    opacity: 0.7,
-  },
-  registerButtonText: {
-    color: theme.colors.white,
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  loginLink: {
-    marginTop: 20,
-    alignItems: 'center',
-  },
-  loginLinkText: {
-    fontSize: 14,
-    color: theme.colors.textSecondary,
-  },
-  loginLinkBold: {
-    color: theme.colors.primary,
-    fontWeight: '600',
-  },
+  scroll: { flexGrow: 1, padding: 28, justifyContent: 'center' },
+  header: { alignItems: 'center', marginBottom: 24 },
+  logo: { width: 64, height: 64, borderRadius: 18, alignItems: 'center', justifyContent: 'center', marginBottom: 12, shadowColor: '#2563EB', shadowOpacity: 0.3, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 8 },
+  logoText: { fontSize: 34, fontWeight: '900', color: '#FFFFFF' },
+  appName: { fontSize: 16, fontWeight: '700', marginBottom: 18 },
+  title: { fontSize: 26, fontWeight: '800' },
+  subtitle: { fontSize: 13, marginTop: 6 },
+  footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 24 },
 });

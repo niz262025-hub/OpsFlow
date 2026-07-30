@@ -1,141 +1,139 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { storage } from '@/src/utils/storage';
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  sendPasswordResetEmail,
+  signOut,
+  onAuthStateChanged,
+  updateProfile,
+  User as FirebaseUser,
+} from 'firebase/auth';
+import { doc, getDoc, getDocs, setDoc, serverTimestamp, collection, query, where, updateDoc } from 'firebase/firestore';
+import { getFirebaseAuth, getFirebaseDb, isFirebaseConfigured } from '@/src/firebase/config';
 
-interface User {
-  id: string;
+export type Role = 'admin' | 'manager' | 'cashier';
+
+export interface UserProfile {
+  uid: string;
   email: string;
-  company_name: string;
-  trial_days_remaining: number;
-  trial_expired: boolean;
+  displayName?: string;
+  companyId?: string | null;
+  role: Role;
+  createdAt?: any;
 }
 
-interface AuthContextType {
-  user: User | null;
-  token: string | null;
+interface AuthCtx {
+  user: FirebaseUser | null;
+  profile: UserProfile | null;
   loading: boolean;
+  firebaseReady: boolean;
+  register: (email: string, password: string, displayName: string) => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, company_name: string) => Promise<void>;
+  forgotPassword: (email: string) => Promise<void>;
   logout: () => Promise<void>;
-  refreshUser: () => Promise<void>;
+  refreshProfile: () => Promise<void>;
+  joinCompanyByCode: (code: string) => Promise<{ companyId: string; role: Role }>;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+const AuthContext = createContext<AuthCtx | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(null);
+  const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [firebaseReady] = useState(isFirebaseConfigured);
 
-  useEffect(() => {
-    loadStoredAuth();
-  }, []);
-
-  const loadStoredAuth = async () => {
+  const loadProfile = async (u: FirebaseUser) => {
     try {
-      const storedToken = await storage.secureGet('auth_token', null);
-      if (storedToken) {
-        setToken(storedToken);
-        await fetchUser(storedToken);
+      const db = getFirebaseDb();
+      const snap = await getDoc(doc(db, 'users', u.uid));
+      if (snap.exists()) {
+        setProfile({ uid: u.uid, ...(snap.data() as any) });
+      } else {
+        setProfile({ uid: u.uid, email: u.email || '', role: 'admin', companyId: null });
       }
-    } catch (error) {
-      console.error('Error loading auth:', error);
-    } finally {
-      setLoading(false);
+    } catch (e) {
+      setProfile({ uid: u.uid, email: u.email || '', role: 'admin', companyId: null });
     }
   };
 
-  const fetchUser = async (authToken: string) => {
-    try {
-      const response = await fetch(`${API_URL}/api/auth/me`, {
-        headers: {
-          'Authorization': `Bearer ${authToken}`,
-        },
-      });
-
-      if (response.ok) {
-        const userData = await response.json();
-        setUser(userData);
-      } else {
-        await logout();
-      }
-    } catch (error) {
-      console.error('Error fetching user:', error);
+  useEffect(() => {
+    if (!firebaseReady) {
+      setLoading(false);
+      return;
     }
+    const auth = getFirebaseAuth();
+    const unsub = onAuthStateChanged(auth, async (u) => {
+      setUser(u);
+      if (u) {
+        await loadProfile(u);
+      } else {
+        setProfile(null);
+      }
+      setLoading(false);
+    });
+    return () => unsub();
+  }, [firebaseReady]);
+
+  const register = async (email: string, password: string, displayName: string) => {
+    const auth = getFirebaseAuth();
+    const db = getFirebaseDb();
+    const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+    if (displayName) await updateProfile(cred.user, { displayName });
+    await setDoc(doc(db, 'users', cred.user.uid), {
+      email: email.trim(),
+      displayName,
+      companyId: null,
+      role: 'admin',
+      createdAt: serverTimestamp(),
+    });
   };
 
   const login = async (email: string, password: string) => {
-    try {
-      const response = await fetch(`${API_URL}/api/auth/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, password }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Login failed');
-      }
-
-      const data = await response.json();
-      await storage.secureSet('auth_token', data.access_token);
-      setToken(data.access_token);
-      setUser(data.user);
-    } catch (error) {
-      throw error;
-    }
+    const auth = getFirebaseAuth();
+    await signInWithEmailAndPassword(auth, email.trim(), password);
   };
 
-  const register = async (email: string, password: string, company_name: string) => {
-    try {
-      const response = await fetch(`${API_URL}/api/auth/register`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, password, company_name }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Registration failed');
-      }
-
-      const data = await response.json();
-      await storage.secureSet('auth_token', data.access_token);
-      setToken(data.access_token);
-      setUser(data.user);
-    } catch (error) {
-      throw error;
-    }
+  const forgotPassword = async (email: string) => {
+    const auth = getFirebaseAuth();
+    await sendPasswordResetEmail(auth, email.trim());
   };
 
   const logout = async () => {
-    await storage.secureRemove('auth_token');
-    setToken(null);
-    setUser(null);
+    const auth = getFirebaseAuth();
+    await signOut(auth);
   };
 
-  const refreshUser = async () => {
-    if (token) {
-      await fetchUser(token);
-    }
+  const refreshProfile = async () => {
+    if (user) await loadProfile(user);
+  };
+
+  const joinCompanyByCode = async (code: string) => {
+    if (!user) throw new Error('Not signed in');
+    const db = getFirebaseDb();
+    const upper = code.trim().toUpperCase();
+    const snap = await getDocs(query(collection(db, 'invite_codes'), where('code', '==', upper)));
+    if (snap.empty) throw new Error('Invalid invite code');
+    const inv = snap.docs[0];
+    const data = inv.data() as any;
+    if (data.used) throw new Error('This code has already been used');
+    await updateDoc(doc(db, 'users', user.uid), { companyId: data.companyId, role: data.role });
+    await updateDoc(doc(db, 'invite_codes', inv.id), { used: true, usedBy: user.uid, usedAt: serverTimestamp() });
+    await loadProfile(user);
+    return { companyId: data.companyId, role: data.role as Role };
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, logout, refreshUser }}>
+    <AuthContext.Provider
+      value={{ user, profile, loading, firebaseReady, register, login, forgotPassword, logout, refreshProfile, joinCompanyByCode }}
+    >
       {children}
     </AuthContext.Provider>
   );
 }
 
 export function useAuth() {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth must be used inside AuthProvider');
+  return ctx;
 }

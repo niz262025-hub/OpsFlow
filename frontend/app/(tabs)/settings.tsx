@@ -1,540 +1,300 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  TextInput,
-  Alert,
-  Modal,
-  ActivityIndicator,
-} from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Alert, Modal, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
+import { MaterialIcons } from '@expo/vector-icons';
+import { useTheme } from '@/src/contexts/ThemeContext';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { useData } from '@/src/contexts/DataContext';
-import { theme } from '@/src/constants/theme';
-import { MaterialIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { usePermissions } from '@/src/hooks/usePermissions';
+import { Badge, Button, Card, Header, Input, Screen } from '@/src/components/UI';
 
 export default function Settings() {
-  const { user, logout } = useAuth();
-  const { updateSettings } = useData();
+  const { theme, mode, setMode } = useTheme();
+  const { profile, logout, user } = useAuth();
+  const { company, updateCompany, customers, suppliers, products, sales, purchases, expenses, createCustomer, updateCustomer, deleteCustomer, team, invites } = useData();
+  const perms = usePermissions();
   const router = useRouter();
-  const [editModalVisible, setEditModalVisible] = useState(false);
-  const [companyName, setCompanyName] = useState(user?.company_name || '');
-  const [lowStockThreshold, setLowStockThreshold] = useState(
-    user?.low_stock_threshold?.toString() || '10'
-  );
-  const [saving, setSaving] = useState(false);
+  const [companyEdit, setCompanyEdit] = useState(false);
+  const [customersModal, setCustomersModal] = useState(false);
 
-  const handleSaveSettings = async () => {
-    if (!companyName.trim()) {
-      Alert.alert('Error', 'Please enter a company name');
-      return;
-    }
+  const [form, setForm] = useState({
+    name: company?.name || '',
+    ssmNumber: company?.ssmNumber || '',
+    ownerName: company?.ownerName || '',
+    phone: company?.phone || '',
+    email: company?.email || '',
+    address: company?.address || '',
+    lowStockThreshold: String(company?.lowStockThreshold ?? 10),
+  });
 
-    const threshold = parseInt(lowStockThreshold, 10);
-    if (isNaN(threshold) || threshold < 0) {
-      Alert.alert('Error', 'Please enter a valid threshold value');
-      return;
-    }
+  React.useEffect(() => {
+    if (company) setForm({
+      name: company.name, ssmNumber: company.ssmNumber || '', ownerName: company.ownerName || '',
+      phone: company.phone || '', email: company.email || '', address: company.address || '',
+      lowStockThreshold: String(company.lowStockThreshold ?? 10),
+    });
+  }, [company?.id]);
 
-    setSaving(true);
+  const saveCompany = async () => {
     try {
-      await updateSettings({
-        company_name: companyName.trim(),
-        low_stock_threshold: threshold,
+      await updateCompany({
+        name: form.name.trim(), ssmNumber: form.ssmNumber.trim() || undefined, ownerName: form.ownerName.trim() || undefined,
+        phone: form.phone.trim() || undefined, email: form.email.trim() || undefined, address: form.address.trim() || undefined,
+        lowStockThreshold: parseInt(form.lowStockThreshold, 10) || 10,
       });
-      Alert.alert('Success', 'Settings updated successfully');
-      setEditModalVisible(false);
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to update settings');
-    } finally {
-      setSaving(false);
-    }
+      setCompanyEdit(false);
+      Alert.alert('Saved', 'Company details updated');
+    } catch (e: any) { Alert.alert('Error', e?.message || 'Save failed'); }
   };
 
   const handleLogout = () => {
-    Alert.alert('Logout', 'Are you sure you want to logout?', [
+    Alert.alert('Logout', 'Are you sure?', [
       { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Logout',
-        style: 'destructive',
-        onPress: async () => {
-          await logout();
-          router.replace('/(auth)/login');
-        },
-      },
+      { text: 'Logout', style: 'destructive', onPress: async () => { await logout(); router.replace('/(auth)/login'); } },
     ]);
   };
 
-  const getTrialStatus = () => {
-    if (!user) return { text: 'Loading...', color: theme.colors.textSecondary };
-
-    if (user.trial_expired) {
-      return { text: 'Trial Expired', color: theme.colors.error };
-    }
-
-    const daysLeft = user.trial_days_remaining;
-    if (daysLeft <= 3) {
-      return { text: `${daysLeft} days left`, color: theme.colors.warning };
-    }
-
-    return { text: `${daysLeft} days left`, color: theme.colors.success };
-  };
-
-  const trialStatus = getTrialStatus();
-
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Settings</Text>
-        <MaterialIcons name="settings" size={24} color={theme.colors.primary} />
-      </View>
-
-      <ScrollView style={styles.scrollView}>
-        {/* Profile Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Company Profile</Text>
-
-          <View style={styles.profileCard}>
-            <View style={styles.logoPlaceholder}>
-              <Text style={styles.logoLetter}>
-                {user?.company_name?.charAt(0).toUpperCase() || 'B'}
-              </Text>
-            </View>
-            <View style={styles.profileInfo}>
-              <Text style={styles.companyName}>{user?.company_name || 'Company Name'}</Text>
-              <Text style={styles.email}>{user?.email || 'email@example.com'}</Text>
-            </View>
-          </View>
-
-          <TouchableOpacity
-            style={styles.menuItem}
-            onPress={() => {
-              setCompanyName(user?.company_name || '');
-              setLowStockThreshold(user?.low_stock_threshold?.toString() || '10');
-              setEditModalVisible(true);
-            }}
-          >
-            <View style={styles.menuItemLeft}>
-              <MaterialIcons name="edit" size={20} color={theme.colors.primary} />
-              <Text style={styles.menuItemText}>Edit Profile</Text>
-            </View>
-            <MaterialIcons name="chevron-right" size={24} color={theme.colors.textSecondary} />
-          </TouchableOpacity>
-        </View>
-
-        {/* Business Settings */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Business Settings</Text>
-
-          <View style={styles.settingItem}>
-            <View style={styles.settingLeft}>
-              <MaterialIcons name="inventory" size={20} color={theme.colors.primary} />
-              <View style={styles.settingTextContainer}>
-                <Text style={styles.settingLabel}>Low Stock Alert</Text>
-                <Text style={styles.settingValue}>
-                  Alert when stock is {user?.low_stock_threshold || 10} or below
-                </Text>
+    <Screen>
+      <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+        <Header title="Settings" />
+        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+          {/* Profile card */}
+          <Card style={{ marginBottom: 12 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: theme.colors.primary, alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ color: '#FFF', fontSize: 24, fontWeight: '800' }}>{(profile?.displayName || profile?.email || 'U').charAt(0).toUpperCase()}</Text>
+              </View>
+              <View style={{ marginLeft: 14, flex: 1 }}>
+                <Text style={{ fontSize: 16, fontWeight: '800', color: theme.colors.text }}>{profile?.displayName || 'User'}</Text>
+                <Text style={{ fontSize: 12, color: theme.colors.textSecondary, marginTop: 2 }}>{profile?.email}</Text>
+                <View style={{ marginTop: 6 }}><Badge label={profile?.role?.toUpperCase() || 'ADMIN'} tone="primary" /></View>
               </View>
             </View>
-          </View>
+          </Card>
 
-          <View style={styles.settingItem}>
-            <View style={styles.settingLeft}>
-              <MaterialIcons name="attach-money" size={20} color={theme.colors.primary} />
-              <View style={styles.settingTextContainer}>
-                <Text style={styles.settingLabel}>Currency</Text>
-                <Text style={styles.settingValue}>Malaysian Ringgit (MYR)</Text>
+          {/* Company */}
+          <Text style={styles.sectionLabel}>Company</Text>
+          <Card style={{ marginBottom: 12 }}>
+            <SettingRow icon="business" label={company?.name || 'No company'} value={company?.ssmNumber || 'No SSM'} onPress={() => setCompanyEdit(true)} />
+            <Divider />
+            <SettingRow icon="phone" label="Phone" value={company?.phone || 'Not set'} />
+            <Divider />
+            <SettingRow icon="place" label="Address" value={company?.address || 'Not set'} />
+            <Divider />
+            <SettingRow icon="attach-money" label="Currency" value={company?.currency || 'MYR'} />
+            <Divider />
+            <SettingRow icon="warning" label="Low Stock Threshold" value={`${company?.lowStockThreshold ?? 10} units (global default)`} />
+          </Card>
+
+          {/* Data */}
+          <Text style={styles.sectionLabel}>Data</Text>
+          <Card style={{ marginBottom: 12 }}>
+            <SettingRow icon="people" label="Customers" value={`${customers.length} customer(s)`} onPress={() => setCustomersModal(true)} />
+            <Divider />
+            <SettingRow icon="local-shipping" label="Suppliers" value={`${suppliers.length} supplier(s)`} onPress={() => router.push('/(tabs)/inventory')} />
+            <Divider />
+            <SettingRow icon="inventory-2" label="Products" value={`${products.length} product(s)`} onPress={() => router.push('/(tabs)/inventory')} />
+            <Divider />
+            <SettingRow icon="receipt-long" label="Sales" value={`${sales.length} sale(s)`} />
+            <Divider />
+            <SettingRow icon="shopping-cart" label="Purchases" value={`${purchases.length} purchase(s)`} />
+            <Divider />
+            <SettingRow icon="receipt" label="Expenses" value={`${expenses.length} expense(s)`} onPress={() => router.push('/expenses')} />
+          </Card>
+
+          {/* Team & Access */}
+          {perms.canManageTeam && (
+            <>
+              <Text style={styles.sectionLabel}>Team & Access</Text>
+              <Card style={{ marginBottom: 12 }}>
+                <SettingRow icon="groups" label="Team Members" value={`${team.length} member(s) • ${invites.filter((i) => !i.used).length} pending invite(s)`} onPress={() => router.push('/team')} />
+              </Card>
+            </>
+          )}
+
+          {/* Preferences */}
+          <Text style={styles.sectionLabel}>Preferences</Text>
+          <Card style={{ marginBottom: 12 }}>
+            <View style={styles.row}>
+              <MaterialIcons name="dark-mode" size={22} color={theme.colors.primary} />
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={{ fontSize: 15, fontWeight: '600', color: theme.colors.text }}>Dark Mode</Text>
+                <Text style={{ fontSize: 12, color: theme.colors.textSecondary, marginTop: 2 }}>{mode === 'system' ? 'Following system' : mode === 'dark' ? 'Enabled' : 'Disabled'}</Text>
               </View>
+              <Switch value={mode === 'dark'} onValueChange={(v) => setMode(v ? 'dark' : 'light')} trackColor={{ true: theme.colors.primary }} />
             </View>
-          </View>
-        </View>
+          </Card>
 
-        {/* Trial Information */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Trial Status</Text>
+          {/* Subscription */}
+          {perms.canManageSubscription && (
+            <>
+              <Text style={styles.sectionLabel}>Subscription</Text>
+              <Card style={{ marginBottom: 12 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: theme.colors.primaryLight, alignItems: 'center', justifyContent: 'center' }}>
+                    <MaterialIcons name="workspace-premium" size={22} color={theme.colors.primary} />
+                  </View>
+                  <View style={{ flex: 1, marginLeft: 12 }}>
+                    <Text style={{ fontSize: 15, fontWeight: '800', color: theme.colors.text }}>Free Trial</Text>
+                    <Text style={{ fontSize: 12, color: theme.colors.textSecondary, marginTop: 2 }}>Full access for 14 days</Text>
+                  </View>
+                  <Badge label="ACTIVE" tone="success" />
+                </View>
+                <Button title="Upgrade to Pro" onPress={() => Alert.alert('Coming soon', 'Subscription plans will be available soon')} icon="star" fullWidth style={{ marginTop: 12 }} />
+              </Card>
+            </>
+          )}
 
-          <View style={styles.trialCard}>
-            <View style={styles.trialHeader}>
-              <MaterialIcons name="schedule" size={32} color={theme.colors.primary} />
-              <View style={styles.trialInfo}>
-                <Text style={styles.trialTitle}>14-Day Free Trial</Text>
-                <Text style={[styles.trialStatus, { color: trialStatus.color }]}>
-                  {trialStatus.text}
-                </Text>
-              </View>
-            </View>
+          {/* Backup */}
+          {perms.canBackupRestore && (
+            <>
+              <Text style={styles.sectionLabel}>Data Management</Text>
+              <Card style={{ marginBottom: 12 }}>
+                <SettingRow icon="backup" label="Backup & Restore" value="Export or import your business data" onPress={() => router.push('/backup')} />
+              </Card>
+            </>
+          )}
 
-            {!user?.trial_expired && (
-              <View style={styles.progressBar}>
-                <View
-                  style={[
-                    styles.progressFill,
-                    {
-                      width: `${((14 - (user?.trial_days_remaining || 0)) / 14) * 100}%`,
-                    },
-                  ]}
-                />
-              </View>
-            )}
-
-            <Text style={styles.trialDescription}>
-              {user?.trial_expired
-                ? 'Your trial has expired. Upgrade to continue using BizFlow Lite.'
-                : 'Enjoying BizFlow Lite? Upgrade anytime to unlock premium features and unlimited access.'}
-            </Text>
-
-            <TouchableOpacity style={styles.upgradeButton}>
-              <Text style={styles.upgradeButtonText}>Upgrade Now</Text>
-              <MaterialIcons name="arrow-forward" size={20} color={theme.colors.white} />
+          {/* Danger */}
+          <Card>
+            <TouchableOpacity onPress={handleLogout} style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <MaterialIcons name="logout" size={22} color={theme.colors.error} />
+              <Text style={{ fontSize: 15, fontWeight: '700', color: theme.colors.error, marginLeft: 12 }}>Logout</Text>
             </TouchableOpacity>
-          </View>
-        </View>
+          </Card>
 
-        {/* About */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>About</Text>
+          <Text style={{ textAlign: 'center', color: theme.colors.textMuted, fontSize: 11, marginTop: 24 }}>BizFlow Pro v1.0 • Made for Malaysian SMEs</Text>
+        </ScrollView>
 
-          <View style={styles.aboutItem}>
-            <Text style={styles.aboutLabel}>App Version</Text>
-            <Text style={styles.aboutValue}>1.0.0</Text>
-          </View>
-
-          <View style={styles.aboutItem}>
-            <Text style={styles.aboutLabel}>Platform</Text>
-            <Text style={styles.aboutValue}>Android</Text>
-          </View>
-        </View>
-
-        {/* Logout */}
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <MaterialIcons name="logout" size={20} color={theme.colors.error} />
-          <Text style={styles.logoutText}>Logout</Text>
-        </TouchableOpacity>
-      </ScrollView>
-
-      {/* Edit Settings Modal */}
-      <Modal visible={editModalVisible} animationType="slide" transparent={true}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Edit Settings</Text>
-              <TouchableOpacity onPress={() => setEditModalVisible(false)}>
-                <MaterialIcons name="close" size={24} color={theme.colors.text} />
-              </TouchableOpacity>
+        {/* Company edit modal */}
+        <Modal visible={companyEdit} transparent animationType="slide" onRequestClose={() => setCompanyEdit(false)}>
+          <View style={{ flex: 1, backgroundColor: theme.colors.overlay, justifyContent: 'flex-end' }}>
+            <View style={{ backgroundColor: theme.colors.background, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '92%' }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20 }}>
+                <Text style={{ fontSize: 20, fontWeight: '800', color: theme.colors.text }}>Company Details</Text>
+                <TouchableOpacity onPress={() => setCompanyEdit(false)}><MaterialIcons name="close" size={26} color={theme.colors.text} /></TouchableOpacity>
+              </View>
+              <ScrollView contentContainerStyle={{ padding: 20, paddingTop: 0 }}>
+                <Input label="Company Name" value={form.name} onChangeText={(v) => setForm({ ...form, name: v })} icon="business" />
+                <Input label="SSM Number" value={form.ssmNumber} onChangeText={(v) => setForm({ ...form, ssmNumber: v })} icon="badge" />
+                <Input label="Owner" value={form.ownerName} onChangeText={(v) => setForm({ ...form, ownerName: v })} icon="person" />
+                <Input label="Phone" value={form.phone} onChangeText={(v) => setForm({ ...form, phone: v })} icon="phone" keyboardType="phone-pad" />
+                <Input label="Email" value={form.email} onChangeText={(v) => setForm({ ...form, email: v })} icon="email" keyboardType="email-address" autoCapitalize="none" />
+                <Input label="Address" value={form.address} onChangeText={(v) => setForm({ ...form, address: v })} icon="place" multiline />
+                <Input label="Low Stock Threshold (default)" value={form.lowStockThreshold} onChangeText={(v) => setForm({ ...form, lowStockThreshold: v })} icon="warning" keyboardType="number-pad" />
+                <Button title="Save" onPress={saveCompany} icon="check" fullWidth size="lg" />
+                <View style={{ height: 40 }} />
+              </ScrollView>
             </View>
-
-            <ScrollView style={styles.modalForm}>
-              <Text style={styles.label}>Company Name</Text>
-              <TextInput
-                style={styles.input}
-                value={companyName}
-                onChangeText={setCompanyName}
-                placeholder="Enter company name"
-                placeholderTextColor={theme.colors.textSecondary}
-              />
-
-              <Text style={styles.label}>Low Stock Alert Threshold</Text>
-              <TextInput
-                style={styles.input}
-                value={lowStockThreshold}
-                onChangeText={setLowStockThreshold}
-                placeholder="10"
-                keyboardType="number-pad"
-                placeholderTextColor={theme.colors.textSecondary}
-              />
-              <Text style={styles.helperText}>
-                You'll be alerted when product stock falls to or below this number
-              </Text>
-
-              <TouchableOpacity
-                style={styles.saveButton}
-                onPress={handleSaveSettings}
-                disabled={saving}
-              >
-                {saving ? (
-                  <ActivityIndicator color={theme.colors.white} />
-                ) : (
-                  <Text style={styles.saveButtonText}>Save Changes</Text>
-                )}
-              </TouchableOpacity>
-            </ScrollView>
           </View>
-        </View>
-      </Modal>
-    </SafeAreaView>
+        </Modal>
+
+        {/* Customers modal */}
+        <CustomersModal
+          visible={customersModal}
+          onClose={() => setCustomersModal(false)}
+          customers={customers}
+          onCreate={createCustomer}
+          onUpdate={updateCustomer}
+          onDelete={deleteCustomer}
+        />
+      </SafeAreaView>
+    </Screen>
   );
 }
 
+function CustomersModal({ visible, onClose, customers, onCreate, onUpdate, onDelete }: any) {
+  const { theme } = useTheme();
+  const [editing, setEditing] = useState<any>(null);
+  const [form, setForm] = useState({ name: '', phone: '', email: '', address: '', membership: 'regular' as any });
+
+  const open = (c?: any) => { setEditing(c || null); setForm(c ? { name: c.name, phone: c.phone || '', email: c.email || '', address: c.address || '', membership: c.membership || 'regular' } : { name: '', phone: '', email: '', address: '', membership: 'regular' }); };
+  const save = async () => {
+    if (!form.name.trim()) return Alert.alert('Missing', 'Name is required');
+    try {
+      if (editing) await onUpdate(editing.id, form);
+      else await onCreate(form);
+      setEditing(null);
+      setForm({ name: '', phone: '', email: '', address: '', membership: 'regular' });
+    } catch (e: any) { Alert.alert('Error', e?.message || 'Failed'); }
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: theme.colors.overlay, justifyContent: 'flex-end' }}>
+        <View style={{ backgroundColor: theme.colors.background, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '92%' }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20 }}>
+            <Text style={{ fontSize: 20, fontWeight: '800', color: theme.colors.text }}>Customers ({customers.length})</Text>
+            <TouchableOpacity onPress={onClose}><MaterialIcons name="close" size={26} color={theme.colors.text} /></TouchableOpacity>
+          </View>
+          <ScrollView contentContainerStyle={{ padding: 20, paddingTop: 0 }}>
+            <Card style={{ marginBottom: 12 }}>
+              <Text style={{ fontSize: 14, fontWeight: '700', color: theme.colors.text, marginBottom: 8 }}>{editing ? 'Edit Customer' : 'New Customer'}</Text>
+              <Input label="Name *" value={form.name} onChangeText={(v) => setForm({ ...form, name: v })} icon="person" />
+              <Input label="Phone" value={form.phone} onChangeText={(v) => setForm({ ...form, phone: v })} icon="phone" keyboardType="phone-pad" />
+              <Input label="Email" value={form.email} onChangeText={(v) => setForm({ ...form, email: v })} icon="email" keyboardType="email-address" autoCapitalize="none" />
+              <Input label="Address" value={form.address} onChangeText={(v) => setForm({ ...form, address: v })} icon="place" multiline />
+              <Text style={{ fontSize: 13, fontWeight: '600', color: theme.colors.text, marginBottom: 6 }}>Membership</Text>
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
+                {(['regular', 'silver', 'gold'] as const).map((m) => (
+                  <TouchableOpacity key={m} onPress={() => setForm({ ...form, membership: m })} style={{ flex: 1, paddingVertical: 10, borderRadius: 10, backgroundColor: form.membership === m ? theme.colors.primary : theme.colors.cardMuted, alignItems: 'center' }}>
+                    <Text style={{ color: form.membership === m ? '#FFF' : theme.colors.text, fontWeight: '700', fontSize: 12, textTransform: 'capitalize' }}>{m}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {editing && <Button title="Cancel" variant="secondary" onPress={() => { setEditing(null); setForm({ name: '', phone: '', email: '', address: '', membership: 'regular' }); }} />}
+                <View style={{ flex: 1 }} />
+                <Button title={editing ? 'Update' : 'Add'} onPress={save} icon={editing ? 'check' : 'add'} />
+              </View>
+            </Card>
+            {customers.map((c: any) => (
+              <Card key={c.id} style={{ marginBottom: 8 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Text style={{ fontSize: 15, fontWeight: '700', color: theme.colors.text }}>{c.name}</Text>
+                      <Badge label={c.membership?.toUpperCase() || 'REGULAR'} tone={c.membership === 'gold' ? 'warning' : c.membership === 'silver' ? 'primary' : 'default'} />
+                    </View>
+                    {c.phone ? <Text style={{ fontSize: 12, color: theme.colors.textSecondary, marginTop: 3 }}>📞 {c.phone}</Text> : null}
+                    {c.email ? <Text style={{ fontSize: 12, color: theme.colors.textSecondary, marginTop: 2 }}>✉️ {c.email}</Text> : null}
+                  </View>
+                  <TouchableOpacity onPress={() => open(c)}><MaterialIcons name="edit" size={20} color={theme.colors.primary} /></TouchableOpacity>
+                  <TouchableOpacity onPress={() => Alert.alert('Delete?', c.name, [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: () => onDelete(c.id) }])} style={{ marginLeft: 8 }}>
+                    <MaterialIcons name="delete-outline" size={20} color={theme.colors.error} />
+                  </TouchableOpacity>
+                </View>
+              </Card>
+            ))}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function SettingRow({ icon, label, value, onPress }: any) {
+  const { theme } = useTheme();
+  return (
+    <TouchableOpacity disabled={!onPress} onPress={onPress} style={styles.row}>
+      <MaterialIcons name={icon} size={20} color={theme.colors.primary} />
+      <View style={{ flex: 1, marginLeft: 12 }}>
+        <Text style={{ fontSize: 14, fontWeight: '600', color: theme.colors.text }}>{label}</Text>
+        <Text style={{ fontSize: 12, color: theme.colors.textSecondary, marginTop: 2 }} numberOfLines={1}>{value}</Text>
+      </View>
+      {onPress && <MaterialIcons name="chevron-right" size={22} color={theme.colors.textMuted} />}
+    </TouchableOpacity>
+  );
+}
+
+function Divider() {
+  const { theme } = useTheme();
+  return <View style={{ height: 1, backgroundColor: theme.colors.border, marginVertical: 4 }} />;
+}
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.secondary,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    backgroundColor: theme.colors.white,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  section: {
-    backgroundColor: theme.colors.white,
-    padding: 20,
-    marginTop: 8,
-  },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: theme.colors.textSecondary,
-    textTransform: 'uppercase',
-    marginBottom: 16,
-    letterSpacing: 0.5,
-  },
-  profileCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: theme.colors.card,
-    borderRadius: theme.borderRadius.md,
-    marginBottom: 16,
-  },
-  logoPlaceholder: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: theme.colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 16,
-  },
-  logoLetter: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: theme.colors.white,
-  },
-  profileInfo: {
-    flex: 1,
-  },
-  companyName: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: theme.colors.text,
-    marginBottom: 4,
-  },
-  email: {
-    fontSize: 14,
-    color: theme.colors.textSecondary,
-  },
-  menuItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: theme.colors.card,
-    borderRadius: theme.borderRadius.md,
-    marginBottom: 12,
-  },
-  menuItemLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  menuItemText: {
-    fontSize: 16,
-    color: theme.colors.text,
-    fontWeight: '500',
-  },
-  settingItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-  },
-  settingLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    gap: 12,
-  },
-  settingTextContainer: {
-    flex: 1,
-  },
-  settingLabel: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: theme.colors.text,
-    marginBottom: 4,
-  },
-  settingValue: {
-    fontSize: 14,
-    color: theme.colors.textSecondary,
-  },
-  trialCard: {
-    backgroundColor: theme.colors.primaryLight,
-    padding: 20,
-    borderRadius: theme.borderRadius.md,
-  },
-  trialHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-    gap: 16,
-  },
-  trialInfo: {
-    flex: 1,
-  },
-  trialTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: theme.colors.text,
-    marginBottom: 4,
-  },
-  trialStatus: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  progressBar: {
-    height: 8,
-    backgroundColor: theme.colors.white,
-    borderRadius: 4,
-    overflow: 'hidden',
-    marginBottom: 16,
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: theme.colors.primary,
-  },
-  trialDescription: {
-    fontSize: 14,
-    color: theme.colors.textSecondary,
-    lineHeight: 20,
-    marginBottom: 16,
-  },
-  upgradeButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: theme.colors.primary,
-    paddingVertical: 14,
-    borderRadius: theme.borderRadius.md,
-    gap: 8,
-  },
-  upgradeButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: theme.colors.white,
-  },
-  aboutItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-  },
-  aboutLabel: {
-    fontSize: 16,
-    color: theme.colors.text,
-  },
-  aboutValue: {
-    fontSize: 16,
-    color: theme.colors.textSecondary,
-    fontWeight: '500',
-  },
-  logoutButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: theme.colors.white,
-    padding: 16,
-    marginTop: 8,
-    marginBottom: 20,
-    gap: 8,
-  },
-  logoutText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: theme.colors.error,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: theme.colors.white,
-    borderTopLeftRadius: theme.borderRadius.xl,
-    borderTopRightRadius: theme.borderRadius.xl,
-    paddingTop: 20,
-    maxHeight: '70%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    marginBottom: 20,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-  },
-  modalForm: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: theme.colors.text,
-    marginBottom: 8,
-  },
-  input: {
-    backgroundColor: theme.colors.card,
-    borderRadius: theme.borderRadius.md,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: theme.colors.text,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    marginBottom: 16,
-  },
-  helperText: {
-    fontSize: 12,
-    color: theme.colors.textSecondary,
-    marginTop: -12,
-    marginBottom: 16,
-  },
-  saveButton: {
-    backgroundColor: theme.colors.primary,
-    borderRadius: theme.borderRadius.md,
-    paddingVertical: 16,
-    alignItems: 'center',
-    marginTop: 8,
-    marginBottom: 32,
-  },
-  saveButtonText: {
-    color: theme.colors.white,
-    fontSize: 16,
-    fontWeight: '600',
-  },
+  sectionLabel: { fontSize: 12, fontWeight: '700', color: '#64748B', textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 8, marginBottom: 8, paddingHorizontal: 4 },
+  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12 },
 });
