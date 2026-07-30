@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/src/contexts/AuthContext';
+import { useData } from '@/src/contexts/DataContext';
 import { theme } from '@/src/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 
@@ -33,14 +34,17 @@ interface TopProduct {
 
 export default function Reports() {
   const { token } = useAuth();
+  const { sales } = useData();
   const [dailySales, setDailySales] = useState<DailySale[]>([]);
   const [monthlySales, setMonthlySales] = useState<MonthlySale[]>([]);
   const [topProducts, setTopProducts] = useState<TopProduct[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Re-fetch aggregated reports whenever the sales list changes
+  // (a new sale in context.sales -> reports auto-refresh)
   useEffect(() => {
     fetchReports();
-  }, []);
+  }, [sales.length]);
 
   const fetchReports = async () => {
     try {

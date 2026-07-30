@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -12,69 +12,27 @@ import {
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/src/contexts/AuthContext';
+import { useData } from '@/src/contexts/DataContext';
 import { theme } from '@/src/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import Animated, { FadeInDown, FadeInRight } from 'react-native-reanimated';
 
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
-
-interface LatestSale {
-  id: string;
-  product_name: string;
-  quantity: number;
-  total_price: number;
-  payment_method: string;
-  created_at: string;
-}
-
-interface DashboardData {
-  today_sales: number;
-  total_products: number;
-  total_stock: number;
-  stock_value: number;
-  low_stock: number;
-  latest_sales: LatestSale[];
-}
-
 export default function Dashboard() {
-  const { user, token, refreshUser } = useAuth();
+  const { user, refreshUser } = useAuth();
+  const { dashboard, refreshAll, refreshDashboard, seedSampleData } = useData();
   const router = useRouter();
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    fetchDashboard();
-    refreshUser();
-  }, []);
-
-  const fetchDashboard = async () => {
-    try {
-      const response = await fetch(`${API_URL}/api/dashboard`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (response.ok) {
-        const dashboardData = await response.json();
-        setData(dashboardData);
-      }
-    } catch (error) {
-      console.error('Error fetching dashboard:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const data = dashboard;
+  const loading = !dashboard;
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await fetchDashboard();
-    await refreshUser();
+    await Promise.all([refreshAll(), refreshUser()]);
     setRefreshing(false);
   };
 
-  const seedSampleData = async () => {
+  const handleSeedSampleData = async () => {
     Alert.alert(
       'Load Sample Data',
       'This will add sample products, categories, and sales to your account. Continue?',
@@ -84,22 +42,10 @@ export default function Dashboard() {
           text: 'Load Data',
           onPress: async () => {
             try {
-              const response = await fetch(`${API_URL}/api/seed-data`, {
-                method: 'POST',
-                headers: {
-                  Authorization: `Bearer ${token}`,
-                },
-              });
-
-              if (response.ok) {
-                Alert.alert('Success', 'Sample data loaded successfully');
-                fetchDashboard();
-              } else {
-                const error = await response.json();
-                Alert.alert('Info', error.message || 'Data already exists');
-              }
-            } catch (error) {
-              Alert.alert('Error', 'Failed to load sample data');
+              const res = await seedSampleData();
+              Alert.alert('Success', res.message || 'Sample data loaded successfully');
+            } catch (error: any) {
+              Alert.alert('Info', error.message || 'Data already exists');
             }
           },
         },
@@ -312,7 +258,7 @@ export default function Dashboard() {
         {/* Demo Data Button */}
         {data?.total_products === 0 && (
           <Animated.View entering={FadeInDown.delay(600).duration(400)} style={styles.demoSection}>
-            <TouchableOpacity style={styles.demoButton} onPress={seedSampleData}>
+            <TouchableOpacity style={styles.demoButton} onPress={handleSeedSampleData} testID="load-sample-data-button">
               <MaterialIcons name="cloud-download" size={20} color={theme.colors.primary} />
               <Text style={styles.demoButtonText}>Load Sample Data</Text>
             </TouchableOpacity>

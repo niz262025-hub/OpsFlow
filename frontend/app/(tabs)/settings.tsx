@@ -12,14 +12,14 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/src/contexts/AuthContext';
+import { useData } from '@/src/contexts/DataContext';
 import { theme } from '@/src/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
-
 export default function Settings() {
-  const { user, token, logout, refreshUser } = useAuth();
+  const { user, logout } = useAuth();
+  const { updateSettings } = useData();
   const router = useRouter();
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [companyName, setCompanyName] = useState(user?.company_name || '');
@@ -42,28 +42,14 @@ export default function Settings() {
 
     setSaving(true);
     try {
-      const response = await fetch(`${API_URL}/api/settings`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          company_name: companyName.trim(),
-          low_stock_threshold: threshold,
-        }),
+      await updateSettings({
+        company_name: companyName.trim(),
+        low_stock_threshold: threshold,
       });
-
-      if (response.ok) {
-        Alert.alert('Success', 'Settings updated successfully');
-        setEditModalVisible(false);
-        await refreshUser();
-      } else {
-        const error = await response.json();
-        Alert.alert('Error', error.detail || 'Failed to update settings');
-      }
-    } catch (error) {
-      Alert.alert('Error', 'Failed to update settings');
+      Alert.alert('Success', 'Settings updated successfully');
+      setEditModalVisible(false);
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to update settings');
     } finally {
       setSaving(false);
     }

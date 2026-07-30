@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -11,36 +11,12 @@ import {
   TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useAuth } from '@/src/contexts/AuthContext';
+import { useData, Product } from '@/src/contexts/DataContext';
 import { theme } from '@/src/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
-
-interface Product {
-  id: string;
-  name: string;
-  sku: string;
-  category_name: string;
-  selling_price: number;
-  stock_quantity: number;
-}
-
-interface Sale {
-  id: string;
-  product_name: string;
-  quantity: number;
-  unit_price: number;
-  total_price: number;
-  payment_method: string;
-  created_at: string;
-}
-
 export default function Sales() {
-  const { token } = useAuth();
-  const [sales, setSales] = useState<Sale[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { sales, products, createSale } = useData();
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [quantity, setQuantity] = useState('1');
@@ -48,33 +24,7 @@ export default function Sales() {
   const [searchQuery, setSearchQuery] = useState('');
   const [processing, setProcessing] = useState(false);
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const fetchData = async () => {
-    try {
-      const [salesRes, productsRes] = await Promise.all([
-        fetch(`${API_URL}/api/sales`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
-        fetch(`${API_URL}/api/products`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
-      ]);
-
-      if (salesRes.ok && productsRes.ok) {
-        const salesData = await salesRes.json();
-        const productsData = await productsRes.json();
-        setSales(salesData);
-        setProducts(productsData);
-      }
-    } catch (error) {
-      console.error('Error fetching data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const loading = false;
 
   const openNewSaleModal = () => {
     setSelectedProduct(null);
@@ -114,29 +64,18 @@ export default function Sales() {
 
     setProcessing(true);
     try {
-      const response = await fetch(`${API_URL}/api/sales`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          product_id: selectedProduct.id,
-          quantity: qty,
-          payment_method: paymentMethod,
-        }),
+      await createSale({
+        product_id: selectedProduct.id,
+        quantity: qty,
+        payment_method: paymentMethod,
       });
-
-      if (response.ok) {
-        Alert.alert('Success', 'Sale completed successfully!');
-        setModalVisible(false);
-        fetchData();
-      } else {
-        const error = await response.json();
-        Alert.alert('Error', error.detail || 'Failed to create sale');
-      }
-    } catch (error) {
-      Alert.alert('Error', 'Failed to create sale');
+      Alert.alert('Success', 'Sale completed successfully!');
+      setModalVisible(false);
+      setSelectedProduct(null);
+      setQuantity('1');
+      setPaymentMethod('Cash');
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to create sale');
     } finally {
       setProcessing(false);
     }

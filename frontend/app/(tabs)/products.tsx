@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -13,37 +13,21 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useAuth } from '@/src/contexts/AuthContext';
+import { useData, Product } from '@/src/contexts/DataContext';
 import { theme } from '@/src/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
-const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
-
-interface Category {
-  id: string;
-  name: string;
-}
-
-interface Product {
-  id: string;
-  name: string;
-  sku: string;
-  barcode: string;
-  category_id: string;
-  category_name: string;
-  selling_price: number;
-  cost_price: number;
-  stock_quantity: number;
-  low_stock_alert: number;
-}
-
 export default function Products() {
-  const { token } = useAuth();
-  const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
+  const {
+    products,
+    categories,
+    createProduct,
+    updateProduct,
+    deleteProduct,
+    createCategory,
+  } = useData();
   const [searchQuery, setSearchQuery] = useState('');
-  const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
   const [categoryModalVisible, setCategoryModalVisible] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -60,33 +44,7 @@ export default function Products() {
   const [formLowStockAlert, setFormLowStockAlert] = useState('');
   const [newCategoryName, setNewCategoryName] = useState('');
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const fetchData = async () => {
-    try {
-      const [productsRes, categoriesRes] = await Promise.all([
-        fetch(`${API_URL}/api/products`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
-        fetch(`${API_URL}/api/categories`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
-      ]);
-
-      if (productsRes.ok && categoriesRes.ok) {
-        const productsData = await productsRes.json();
-        const categoriesData = await categoriesRes.json();
-        setProducts(productsData);
-        setCategories(categoriesData);
-      }
-    } catch (error) {
-      console.error('Error fetching data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const loading = false;
 
   const openAddModal = () => {
     setEditingProduct(null);
@@ -147,12 +105,6 @@ export default function Products() {
 
     setSaving(true);
     try {
-      const url = editingProduct
-        ? `${API_URL}/api/products/${editingProduct.id}`
-        : `${API_URL}/api/products`;
-
-      const method = editingProduct ? 'PUT' : 'POST';
-
       const body: any = {
         name: formName.trim(),
         sku: formSku.trim(),
@@ -167,25 +119,16 @@ export default function Products() {
         body.low_stock_alert = lowStockAlert;
       }
 
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(body),
-      });
-
-      if (response.ok) {
-        Alert.alert('Success', `Product ${editingProduct ? 'updated' : 'created'} successfully`);
-        setModalVisible(false);
-        fetchData();
+      if (editingProduct) {
+        await updateProduct(editingProduct.id, body);
       } else {
-        const error = await response.json();
-        Alert.alert('Error', error.detail || 'Failed to save product');
+        await createProduct(body);
       }
-    } catch (error) {
-      Alert.alert('Error', 'Failed to save product');
+
+      Alert.alert('Success', `Product ${editingProduct ? 'updated' : 'created'} successfully`);
+      setModalVisible(false);
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to save product');
     } finally {
       setSaving(false);
     }
@@ -202,19 +145,10 @@ export default function Products() {
           style: 'destructive',
           onPress: async () => {
             try {
-              const response = await fetch(`${API_URL}/api/products/${product.id}`, {
-                method: 'DELETE',
-                headers: { Authorization: `Bearer ${token}` },
-              });
-
-              if (response.ok) {
-                Alert.alert('Success', 'Product deleted successfully');
-                fetchData();
-              } else {
-                Alert.alert('Error', 'Failed to delete product');
-              }
-            } catch (error) {
-              Alert.alert('Error', 'Failed to delete product');
+              await deleteProduct(product.id);
+              Alert.alert('Success', 'Product deleted successfully');
+            } catch (error: any) {
+              Alert.alert('Error', error.message || 'Failed to delete product');
             }
           },
         },
@@ -229,27 +163,12 @@ export default function Products() {
     }
 
     try {
-      const response = await fetch(`${API_URL}/api/categories`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ name: newCategoryName.trim() }),
-      });
-
-      if (response.ok) {
-        const newCat = await response.json();
-        setNewCategoryName('');
-        setCategoryModalVisible(false);
-        await fetchData();
-        setFormCategory(newCat.id);
-      } else {
-        const error = await response.json();
-        Alert.alert('Error', error.detail || 'Failed to add category');
-      }
-    } catch (error) {
-      Alert.alert('Error', 'Failed to add category');
+      const newCat = await createCategory(newCategoryName.trim());
+      setNewCategoryName('');
+      setCategoryModalVisible(false);
+      setFormCategory(newCat.id);
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to add category');
     }
   };
 
