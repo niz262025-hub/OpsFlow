@@ -472,7 +472,7 @@ export default function Products() {
               </View>
 
               {/* Profit Margin Preview */}
-              {formSellingPrice && formCostPrice && parseFloat(formSellingPrice) > 0 && parseFloat(formCostPrice) >= 0 && (
+              {!!formSellingPrice && !!formCostPrice && parseFloat(formSellingPrice) > 0 && parseFloat(formCostPrice) >= 0 && (
                 <View style={styles.marginPreview}>
                   <MaterialIcons name="trending-up" size={16} color={theme.colors.success} />
                   <Text style={styles.marginText}>
