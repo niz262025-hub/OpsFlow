@@ -446,9 +446,10 @@ async def get_dashboard(current_user: dict = Depends(get_current_user)):
     # Total products
     total_products = await db.products.count_documents({"user_id": user_id})
     
-    # Total stock
+    # Total stock and stock value
     products = await db.products.find({"user_id": user_id}).to_list(1000)
     total_stock = sum(prod["stock_quantity"] for prod in products)
+    stock_value = sum(prod["selling_price"] * prod["stock_quantity"] for prod in products)
     
     # Low stock count
     low_stock_count = await db.products.count_documents({
@@ -456,11 +457,25 @@ async def get_dashboard(current_user: dict = Depends(get_current_user)):
         "stock_quantity": {"$lte": low_stock_threshold}
     })
     
+    # Latest sales (last 5)
+    latest_sales = await db.sales.find({"user_id": user_id}).sort("created_at", -1).limit(5).to_list(5)
+    
+    latest_sales_data = [{
+        "id": str(sale["_id"]),
+        "product_name": sale["product_name"],
+        "quantity": sale["quantity"],
+        "total_price": sale["total_price"],
+        "payment_method": sale["payment_method"],
+        "created_at": sale["created_at"].isoformat()
+    } for sale in latest_sales]
+    
     return {
         "today_sales": today_total,
         "total_products": total_products,
         "total_stock": total_stock,
-        "low_stock": low_stock_count
+        "stock_value": stock_value,
+        "low_stock": low_stock_count,
+        "latest_sales": latest_sales_data
     }
 
 # Reports Routes
