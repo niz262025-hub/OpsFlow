@@ -392,47 +392,110 @@ async def delete_product(product_id: str, current_user: dict = Depends(get_curre
 # Sales Routes
 @api_router.post("/sales")
 async def create_sale(sale: SaleCreate, current_user: dict = Depends(get_current_user)):
+    """
+    Atomically create a sale:
+    1. Deduct stock ONLY if sufficient (atomic conditional update)
+    2. If deduction fails -> raise Insufficient Stock
+    3. Insert sale + inventory movement records
+    4. Best-effort rollback of stock if bookkeeping inserts fail
+    """
     user_id = str(current_user["_id"])
     
-    # Get product
-    product = await db.products.find_one({"_id": ObjectId(sale.product_id), "user_id": user_id})
-    if not product:
-        raise HTTPException(status_code=404, detail="Product not found")
+    # Validate quantity
+    if sale.quantity <= 0:
+        raise HTTPException(status_code=400, detail="Quantity must be greater than zero")
     
-    # Check stock
-    if product["stock_quantity"] < sale.quantity:
-        raise HTTPException(status_code=400, detail="Insufficient stock")
+    # Validate payment method
+    if sale.payment_method not in ["Cash", "QR"]:
+        raise HTTPException(status_code=400, detail="Invalid payment method")
     
-    # Calculate total
-    total_price = product["selling_price"] * sale.quantity
+    # Validate product_id format
+    try:
+        product_oid = ObjectId(sale.product_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid product ID")
     
-    # Create sale record
-    new_sale = {
-        "product_id": sale.product_id,
-        "product_name": product["name"],
-        "quantity": sale.quantity,
-        "unit_price": product["selling_price"],
-        "total_price": total_price,
-        "payment_method": sale.payment_method,
-        "user_id": user_id,
-        "created_at": datetime.utcnow()
-    }
-    
-    result = await db.sales.insert_one(new_sale)
-    
-    # Update product stock
-    await db.products.update_one(
-        {"_id": ObjectId(sale.product_id)},
-        {"$inc": {"stock_quantity": -sale.quantity}}
+    # Atomic conditional stock deduction:
+    # Only decrement if product exists AND stock >= quantity
+    # This is atomic at the document level, preventing race conditions.
+    updated_product = await db.products.find_one_and_update(
+        {
+            "_id": product_oid,
+            "user_id": user_id,
+            "stock_quantity": {"$gte": sale.quantity}
+        },
+        {"$inc": {"stock_quantity": -sale.quantity}},
+        return_document=True  # return the UPDATED document
     )
     
-    return {
-        "id": str(result.inserted_id),
-        "product_name": product["name"],
+    if updated_product is None:
+        # Check whether product exists at all — for accurate error messaging
+        product_exists = await db.products.find_one(
+            {"_id": product_oid, "user_id": user_id},
+            {"stock_quantity": 1, "name": 1}
+        )
+        if not product_exists:
+            raise HTTPException(status_code=404, detail="Product not found")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Insufficient stock. Available: {product_exists['stock_quantity']}, Requested: {sale.quantity}"
+        )
+    
+    now = datetime.utcnow()
+    unit_price = updated_product["selling_price"]
+    total_price = unit_price * sale.quantity
+    
+    # Build sale + movement records
+    sale_doc = {
+        "product_id": sale.product_id,
+        "product_name": updated_product["name"],
         "quantity": sale.quantity,
-        "unit_price": product["selling_price"],
+        "unit_price": unit_price,
+        "selling_price": unit_price,  # explicit alias for clarity
         "total_price": total_price,
-        "payment_method": sale.payment_method
+        "total_amount": total_price,  # explicit alias for clarity
+        "payment_method": sale.payment_method,
+        "user_id": user_id,
+        "created_at": now,
+        "date": now,
+    }
+    
+    try:
+        sale_result = await db.sales.insert_one(sale_doc)
+        sale_id = str(sale_result.inserted_id)
+        
+        movement_doc = {
+            "product_id": sale.product_id,
+            "product_name": updated_product["name"],
+            "quantity": sale.quantity,
+            "type": "SALE",
+            "reference_id": sale_id,
+            "stock_after": updated_product["stock_quantity"],
+            "user_id": user_id,
+            "created_at": now,
+            "date": now,
+        }
+        await db.inventory_movements.insert_one(movement_doc)
+    except Exception as e:
+        # Best-effort compensation: give stock back so nothing is lost silently
+        await db.products.update_one(
+            {"_id": product_oid, "user_id": user_id},
+            {"$inc": {"stock_quantity": sale.quantity}}
+        )
+        raise HTTPException(status_code=500, detail=f"Failed to record sale: {str(e)}")
+    
+    return {
+        "id": sale_id,
+        "product_id": sale.product_id,
+        "product_name": updated_product["name"],
+        "quantity": sale.quantity,
+        "unit_price": unit_price,
+        "selling_price": unit_price,
+        "total_price": total_price,
+        "total_amount": total_price,
+        "payment_method": sale.payment_method,
+        "stock_after": updated_product["stock_quantity"],
+        "created_at": now.isoformat(),
     }
 
 @api_router.get("/sales")
@@ -442,13 +505,71 @@ async def get_sales(current_user: dict = Depends(get_current_user)):
     
     return [{
         "id": str(sale["_id"]),
+        "product_id": sale.get("product_id"),
         "product_name": sale["product_name"],
         "quantity": sale["quantity"],
         "unit_price": sale["unit_price"],
+        "selling_price": sale.get("selling_price", sale["unit_price"]),
         "total_price": sale["total_price"],
+        "total_amount": sale.get("total_amount", sale["total_price"]),
         "payment_method": sale["payment_method"],
         "created_at": sale["created_at"].isoformat()
     } for sale in sales]
+
+# Inventory Movements Routes
+@api_router.get("/inventory-movements")
+async def get_inventory_movements(
+    product_id: Optional[str] = None,
+    limit: int = 100,
+    current_user: dict = Depends(get_current_user)
+):
+    user_id = str(current_user["_id"])
+    query = {"user_id": user_id}
+    if product_id:
+        query["product_id"] = product_id
+    
+    movements = await db.inventory_movements.find(query).sort("created_at", -1).limit(limit).to_list(limit)
+    
+    return [{
+        "id": str(m["_id"]),
+        "product_id": m["product_id"],
+        "product_name": m.get("product_name", ""),
+        "quantity": m["quantity"],
+        "type": m["type"],
+        "reference_id": m.get("reference_id"),
+        "stock_after": m.get("stock_after"),
+        "date": m["created_at"].isoformat(),
+        "created_at": m["created_at"].isoformat(),
+    } for m in movements]
+
+# Low Stock Products
+@api_router.get("/products/low-stock")
+async def get_low_stock_products(current_user: dict = Depends(get_current_user)):
+    user_id = str(current_user["_id"])
+    global_threshold = current_user.get("low_stock_threshold", 10)
+    
+    products = await db.products.find({"user_id": user_id}).to_list(1000)
+    
+    low_stock = []
+    for prod in products:
+        threshold = prod.get("low_stock_alert")
+        if threshold is None:
+            threshold = global_threshold
+        if prod["stock_quantity"] <= threshold:
+            category = await db.categories.find_one({"_id": ObjectId(prod["category_id"])})
+            low_stock.append({
+                "id": str(prod["_id"]),
+                "name": prod["name"],
+                "sku": prod["sku"],
+                "category_name": category["name"] if category else "Unknown",
+                "stock_quantity": prod["stock_quantity"],
+                "low_stock_alert": threshold,
+                "selling_price": prod["selling_price"],
+            })
+    
+    # Sort by lowest stock first
+    low_stock.sort(key=lambda p: p["stock_quantity"])
+    return low_stock
 
 # Dashboard Routes
 @api_router.get("/dashboard")
@@ -473,14 +594,24 @@ async def get_dashboard(current_user: dict = Depends(get_current_user)):
     total_stock = sum(prod["stock_quantity"] for prod in products)
     stock_value = sum(prod["selling_price"] * prod["stock_quantity"] for prod in products)
     
-    # Low stock count - respect per-product threshold if set, else global
-    low_stock_count = 0
+    # Low stock detection - respect per-product threshold, else global
+    low_stock_products = []
     for prod in products:
         threshold = prod.get("low_stock_alert")
         if threshold is None:
             threshold = low_stock_threshold
         if prod["stock_quantity"] <= threshold:
-            low_stock_count += 1
+            low_stock_products.append({
+                "id": str(prod["_id"]),
+                "name": prod["name"],
+                "sku": prod["sku"],
+                "stock_quantity": prod["stock_quantity"],
+                "low_stock_alert": threshold,
+            })
+    
+    # Sort by lowest stock first
+    low_stock_products.sort(key=lambda p: p["stock_quantity"])
+    low_stock_count = len(low_stock_products)
     
     # Latest sales (last 5)
     latest_sales = await db.sales.find({"user_id": user_id}).sort("created_at", -1).limit(5).to_list(5)
@@ -500,6 +631,7 @@ async def get_dashboard(current_user: dict = Depends(get_current_user)):
         "total_stock": total_stock,
         "stock_value": stock_value,
         "low_stock": low_stock_count,
+        "low_stock_products": low_stock_products,
         "latest_sales": latest_sales_data
     }
 

@@ -1,0 +1,40 @@
+{
+  "summary": "Backend testing complete for BizFlow Lite inventory synchronization fix. All 14 pytest tests passed (100%). Verified: (1) atomic POST /api/sales with sufficient stock returns 200 + stock_after; (2) insufficient stock returns 400 with 'Insufficient stock. Available: X, Requested: Y'; (3) 404 for nonexistent product, 400 for qty<=0, 400 for invalid payment_method, 400 for malformed product_id; (4) Sales history GET /api/sales returns product_id, product_name, quantity, unit_price, selling_price (== unit_price), total_price, total_amount (== total_price), payment_method, created_at; (5) GET /api/inventory-movements records type=SALE, reference_id=sale_id, correct stock_after, filtering by product_id works, sorted by created_at desc; (6) GET /api/products/low-stock returns products where stock<=low_stock_alert with all required fields, sorted ascending; (7) GET /api/dashboard includes low_stock_products array with low_stock count == len(low_stock_products); dashboard reflects total_stock/stock_value/today_sales changes after sale; a sale that pushes stock to threshold shows up in low_stock_products on next dashboard call; (8) Concurrency: 3 parallel qty=3 sales against stock=5 -> exactly 1 success + 2 x 400 'Insufficient stock', final stock == 2 (never negative). Backend URL: https://sales-dashboard-685.preview.emergentagent.com/api.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_inventory_sync.py",
+    "/app/test_reports/pytest/pytest_inventory_sync.xml"
+  ],
+  "action_items": [
+    "No backend fixes required. Inventory sync is atomic and robust as designed.",
+    "Optional improvement: For strict multi-document atomicity across sales + inventory_movements + product stock, consider a MongoDB transaction (client.start_session() with with_transaction). Current implementation is per-document atomic on stock deduction with best-effort compensation on bookkeeping failure - acceptable for MVP but not perfectly ACID across all three writes.",
+    "Consider splitting server.py (now 797 lines) into modules (routes/, models/) as it has crossed the 700-line guideline."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 797 lines - exceeds the 700-line guideline. Should be split into modules (auth, products, sales, inventory_movements, dashboard, reports, settings).",
+    "The rollback on bookkeeping failure (line 481-484) is best-effort only; if the rollback update_one itself fails, stock is silently over-deducted. Acceptable but logging the compensation failure would improve observability.",
+    "Route ordering is safe: GET /api/products/low-stock is registered after PUT/DELETE /products/{product_id} but there is no GET /products/{product_id}, so no path-parameter shadowing occurs.",
+    "The atomic filter {'stock_quantity': {'$gte': quantity}} correctly prevents oversell under concurrency (verified by concurrency test).",
+    "SECRET_KEY still has an insecure default 'bizflow-secret-key-change-in-production' - ensure JWT_SECRET_KEY is set in production.",
+    "product.dict() (line 355, 708) is Pydantic v1 style; migrate to .model_dump() when moving to Pydantic v2.",
+    "GET /api/inventory-movements has no index hint; consider a compound index on (user_id, product_id, created_at desc) for performance at scale."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_inventory_sync.py (new)"
+  ],
+  "success_rate": {"backend": "100% (14/14)", "frontend": "not tested (backend-only request)"},
+  "seed_data_creation": "Each test class creates its own TEST_-prefixed products via POST /api/products and deletes them in a finally block. No persistent seed data added. Reused existing admin@bizflow.com user.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run with `pytest tests/test_inventory_sync.py -n 0` to disable xdist parallelism because the concurrency test itself spawns threads and dashboard totals are shared state across tests. All 14 tests pass sequentially in ~6 seconds. To rerun subset, target class names: TestSaleCreation, TestSalesHistory, TestInventoryMovements, TestLowStockEndpoint, TestDashboardIntegration, TestConcurrency.",
+  "rca_of_issue": "N/A - no bugs found. The inventory sync fix is working correctly: atomic conditional find_one_and_update on stock, deterministic error messages including exact Available/Requested numbers, proper sale + inventory_movement records with matching reference_id/stock_after, dashboard reflects changes immediately, and no oversell under concurrency."
+}
