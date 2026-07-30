@@ -94,16 +94,22 @@ class CategoryUpdate(BaseModel):
 class ProductCreate(BaseModel):
     name: str
     sku: str
+    barcode: Optional[str] = None
     category_id: str
     selling_price: float
+    cost_price: float = 0.0
     stock_quantity: int
+    low_stock_alert: Optional[int] = None
 
 class ProductUpdate(BaseModel):
     name: Optional[str] = None
     sku: Optional[str] = None
+    barcode: Optional[str] = None
     category_id: Optional[str] = None
     selling_price: Optional[float] = None
+    cost_price: Optional[float] = None
     stock_quantity: Optional[int] = None
+    low_stock_alert: Optional[int] = None
 
 class SaleCreate(BaseModel):
     product_id: str
@@ -278,10 +284,12 @@ async def get_products(search: Optional[str] = None, current_user: dict = Depend
     if search:
         query["$or"] = [
             {"name": {"$regex": search, "$options": "i"}},
-            {"sku": {"$regex": search, "$options": "i"}}
+            {"sku": {"$regex": search, "$options": "i"}},
+            {"barcode": {"$regex": search, "$options": "i"}}
         ]
     
     products = await db.products.find(query).to_list(1000)
+    global_threshold = current_user.get("low_stock_threshold", 10)
     
     result = []
     for prod in products:
@@ -290,10 +298,13 @@ async def get_products(search: Optional[str] = None, current_user: dict = Depend
             "id": str(prod["_id"]),
             "name": prod["name"],
             "sku": prod["sku"],
+            "barcode": prod.get("barcode", ""),
             "category_id": prod["category_id"],
             "category_name": category["name"] if category else "Unknown",
             "selling_price": prod["selling_price"],
-            "stock_quantity": prod["stock_quantity"]
+            "cost_price": prod.get("cost_price", 0.0),
+            "stock_quantity": prod["stock_quantity"],
+            "low_stock_alert": prod.get("low_stock_alert") if prod.get("low_stock_alert") is not None else global_threshold
         })
     
     return result
@@ -310,24 +321,31 @@ async def create_product(product: ProductCreate, current_user: dict = Depends(ge
     new_product = {
         "name": product.name,
         "sku": product.sku,
+        "barcode": product.barcode or "",
         "category_id": product.category_id,
         "selling_price": product.selling_price,
+        "cost_price": product.cost_price,
         "stock_quantity": product.stock_quantity,
+        "low_stock_alert": product.low_stock_alert,
         "user_id": user_id,
         "created_at": datetime.utcnow()
     }
     
     result = await db.products.insert_one(new_product)
     category = await db.categories.find_one({"_id": ObjectId(product.category_id)})
+    global_threshold = current_user.get("low_stock_threshold", 10)
     
     return {
         "id": str(result.inserted_id),
         "name": product.name,
         "sku": product.sku,
+        "barcode": product.barcode or "",
         "category_id": product.category_id,
         "category_name": category["name"] if category else "Unknown",
         "selling_price": product.selling_price,
-        "stock_quantity": product.stock_quantity
+        "cost_price": product.cost_price,
+        "stock_quantity": product.stock_quantity,
+        "low_stock_alert": product.low_stock_alert if product.low_stock_alert is not None else global_threshold
     }
 
 @api_router.put("/products/{product_id}")
@@ -348,15 +366,19 @@ async def update_product(product_id: str, product: ProductUpdate, current_user: 
     
     updated_product = await db.products.find_one({"_id": ObjectId(product_id)})
     category = await db.categories.find_one({"_id": ObjectId(updated_product["category_id"])})
+    global_threshold = current_user.get("low_stock_threshold", 10)
     
     return {
         "id": str(updated_product["_id"]),
         "name": updated_product["name"],
         "sku": updated_product["sku"],
+        "barcode": updated_product.get("barcode", ""),
         "category_id": updated_product["category_id"],
         "category_name": category["name"] if category else "Unknown",
         "selling_price": updated_product["selling_price"],
-        "stock_quantity": updated_product["stock_quantity"]
+        "cost_price": updated_product.get("cost_price", 0.0),
+        "stock_quantity": updated_product["stock_quantity"],
+        "low_stock_alert": updated_product.get("low_stock_alert") if updated_product.get("low_stock_alert") is not None else global_threshold
     }
 
 @api_router.delete("/products/{product_id}")
@@ -451,11 +473,14 @@ async def get_dashboard(current_user: dict = Depends(get_current_user)):
     total_stock = sum(prod["stock_quantity"] for prod in products)
     stock_value = sum(prod["selling_price"] * prod["stock_quantity"] for prod in products)
     
-    # Low stock count
-    low_stock_count = await db.products.count_documents({
-        "user_id": user_id,
-        "stock_quantity": {"$lte": low_stock_threshold}
-    })
+    # Low stock count - respect per-product threshold if set, else global
+    low_stock_count = 0
+    for prod in products:
+        threshold = prod.get("low_stock_alert")
+        if threshold is None:
+            threshold = low_stock_threshold
+        if prod["stock_quantity"] <= threshold:
+            low_stock_count += 1
     
     # Latest sales (last 5)
     latest_sales = await db.sales.find({"user_id": user_id}).sort("created_at", -1).limit(5).to_list(5)
@@ -586,13 +611,13 @@ async def seed_data(current_user: dict = Depends(get_current_user)):
     
     # Create sample products
     products = [
-        {"name": "Wireless Mouse", "sku": "ELEC001", "category_id": cat_ids[0], "selling_price": 45.00, "stock_quantity": 25, "user_id": user_id, "created_at": datetime.utcnow()},
-        {"name": "USB Cable", "sku": "ELEC002", "category_id": cat_ids[0], "selling_price": 15.00, "stock_quantity": 50, "user_id": user_id, "created_at": datetime.utcnow()},
-        {"name": "Laptop Stand", "sku": "ELEC003", "category_id": cat_ids[0], "selling_price": 89.00, "stock_quantity": 8, "user_id": user_id, "created_at": datetime.utcnow()},
-        {"name": "T-Shirt (Blue)", "sku": "CLO001", "category_id": cat_ids[1], "selling_price": 35.00, "stock_quantity": 30, "user_id": user_id, "created_at": datetime.utcnow()},
-        {"name": "Jeans", "sku": "CLO002", "category_id": cat_ids[1], "selling_price": 120.00, "stock_quantity": 15, "user_id": user_id, "created_at": datetime.utcnow()},
-        {"name": "Coffee Beans 500g", "sku": "FOOD001", "category_id": cat_ids[2], "selling_price": 28.00, "stock_quantity": 40, "user_id": user_id, "created_at": datetime.utcnow()},
-        {"name": "Green Tea Box", "sku": "FOOD002", "category_id": cat_ids[2], "selling_price": 22.00, "stock_quantity": 5, "user_id": user_id, "created_at": datetime.utcnow()},
+        {"name": "Wireless Mouse", "sku": "ELEC001", "barcode": "8801234567001", "category_id": cat_ids[0], "selling_price": 45.00, "cost_price": 25.00, "stock_quantity": 25, "low_stock_alert": 5, "user_id": user_id, "created_at": datetime.utcnow()},
+        {"name": "USB Cable", "sku": "ELEC002", "barcode": "8801234567002", "category_id": cat_ids[0], "selling_price": 15.00, "cost_price": 6.00, "stock_quantity": 50, "low_stock_alert": 10, "user_id": user_id, "created_at": datetime.utcnow()},
+        {"name": "Laptop Stand", "sku": "ELEC003", "barcode": "8801234567003", "category_id": cat_ids[0], "selling_price": 89.00, "cost_price": 45.00, "stock_quantity": 8, "low_stock_alert": 5, "user_id": user_id, "created_at": datetime.utcnow()},
+        {"name": "T-Shirt (Blue)", "sku": "CLO001", "barcode": "8801234567004", "category_id": cat_ids[1], "selling_price": 35.00, "cost_price": 18.00, "stock_quantity": 30, "low_stock_alert": 8, "user_id": user_id, "created_at": datetime.utcnow()},
+        {"name": "Jeans", "sku": "CLO002", "barcode": "8801234567005", "category_id": cat_ids[1], "selling_price": 120.00, "cost_price": 60.00, "stock_quantity": 15, "low_stock_alert": 5, "user_id": user_id, "created_at": datetime.utcnow()},
+        {"name": "Coffee Beans 500g", "sku": "FOOD001", "barcode": "8801234567006", "category_id": cat_ids[2], "selling_price": 28.00, "cost_price": 14.00, "stock_quantity": 40, "low_stock_alert": 10, "user_id": user_id, "created_at": datetime.utcnow()},
+        {"name": "Green Tea Box", "sku": "FOOD002", "barcode": "8801234567007", "category_id": cat_ids[2], "selling_price": 22.00, "cost_price": 10.00, "stock_quantity": 5, "low_stock_alert": 5, "user_id": user_id, "created_at": datetime.utcnow()},
     ]
     await db.products.insert_many(products)
     
