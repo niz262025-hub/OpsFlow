@@ -14,6 +14,13 @@ import { FirebaseStorage, getStorage } from 'firebase/storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
+let hasWarnedFirebaseInit = false;
+
+function warnFirebaseInit(message: string) {
+  if (hasWarnedFirebaseInit) return;
+  hasWarnedFirebaseInit = true;
+}
+
 const firebaseConfig = {
   apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
@@ -54,11 +61,17 @@ export function getFirebaseAuth(): Auth {
       _auth = getAuth(a);
       _auth.setPersistence(browserLocalPersistence).catch(() => {});
     } else {
-      _auth = initializeAuth(a, {
-        persistence: getReactNativePersistence(AsyncStorage),
-      });
+      try {
+        _auth = initializeAuth(a, {
+          persistence: getReactNativePersistence(AsyncStorage),
+        });
+      } catch (error) {
+        warnFirebaseInit(`Firebase auth init fallback: ${error instanceof Error ? error.message : String(error)}`);
+        _auth = getAuth(a);
+      }
     }
-  } catch {
+  } catch (error) {
+    warnFirebaseInit(`Firebase auth init error: ${error instanceof Error ? error.message : String(error)}`);
     _auth = getAuth(a);
   }
   return _auth!;
@@ -72,7 +85,8 @@ export function getFirebaseDb(): Firestore {
       experimentalForceLongPolling: Platform.OS !== 'web',
       ignoreUndefinedProperties: true,
     } as any);
-  } catch {
+  } catch (error) {
+    warnFirebaseInit(`Firebase Firestore init fallback: ${error instanceof Error ? error.message : String(error)}`);
     _db = getFirestore(a);
   }
   return _db;

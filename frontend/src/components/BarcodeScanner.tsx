@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Modal, Platform, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Modal, Platform, Alert, TextInput, Linking } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
 import { useTheme } from '@/src/contexts/ThemeContext';
 import { Button } from '@/src/components/UI';
 
@@ -26,74 +27,164 @@ export function BarcodeScannerModal({
   onScanned: (code: string) => void;
   title?: string;
 }) {
-  const { theme } = useTheme();
   const [handled, setHandled] = useState(false);
   const [torch, setTorch] = useState(false);
+  const [manualVisible, setManualVisible] = useState(false);
+  const [manualValue, setManualValue] = useState('');
 
   const isWeb = Platform.OS === 'web';
 
   useEffect(() => {
-    if (visible) setHandled(false);
+    if (visible) {
+      setHandled(false);
+      setManualVisible(false);
+      setManualValue('');
+    }
   }, [visible]);
 
   if (!visible) return null;
 
+  const openManualEntry = () => {
+    setManualVisible(true);
+  };
+
+  const closeManualEntry = () => {
+    setManualVisible(false);
+    setManualValue('');
+  };
+
+  const submitManualEntry = () => {
+    const value = manualValue.trim();
+    if (!value) return;
+    setHandled(true);
+    onScanned(value);
+    closeManualEntry();
+    onClose();
+  };
+
   // ---- Web fallback: manual entry (expo-camera doesn't support web) ----
   if (isWeb) {
     return (
-      <Modal visible transparent animationType="fade" onRequestClose={onClose}>
-        <View style={{ flex: 1, backgroundColor: theme.colors.overlay, justifyContent: 'center', padding: 24 }}>
-          <View style={{ backgroundColor: theme.colors.background, padding: 20, borderRadius: 16 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
-              <MaterialIcons name="qr-code-scanner" size={28} color={theme.colors.primary} />
-              <Text style={{ marginLeft: 10, fontSize: 18, fontWeight: '800', color: theme.colors.text }}>{title}</Text>
-            </View>
-            <Text style={{ color: theme.colors.textSecondary, fontSize: 13, lineHeight: 20, marginBottom: 12 }}>
-              Camera scanning is only available on iOS and Android. On the web preview, type the barcode manually below.
-            </Text>
-            <ManualEntry onDone={(code) => { setHandled(true); onScanned(code); onClose(); }} onCancel={onClose} />
-          </View>
-        </View>
-      </Modal>
+      <ManualEntryModal
+        visible
+        title={title}
+        message="Camera scanning is only available on iOS and Android. On the web preview, type the barcode manually below."
+        value={manualValue}
+        setValue={setManualValue}
+        onClose={onClose}
+        onSubmit={submitManualEntry}
+      />
     );
   }
 
-  return <NativeScanner visible={visible} onClose={onClose} onScanned={(c) => { if (handled) return; setHandled(true); onScanned(c); }} title={title} torch={torch} setTorch={setTorch} />;
-}
-
-function ManualEntry({ onDone, onCancel }: { onDone: (v: string) => void; onCancel: () => void }) {
-  const { theme } = useTheme();
-  const { TextInput } = require('react-native');
-  const [v, setV] = useState('');
   return (
     <>
-      <TextInput
-        value={v}
-        onChangeText={setV}
-        placeholder="Barcode / SKU"
-        placeholderTextColor={theme.colors.textMuted}
-        autoFocus
-        style={{
-          borderWidth: 1.5, borderColor: theme.colors.border, borderRadius: 10, padding: 12,
-          color: theme.colors.text, fontSize: 15, marginBottom: 12,
+      <NativeScanner
+        visible={visible}
+        onClose={onClose}
+        onScanned={(result) => {
+          if (handled) return;
+          setHandled(true);
+          onScanned(result);
         }}
+        title={title}
+        torch={torch}
+        setTorch={setTorch}
+        onManualEntry={openManualEntry}
       />
-      <View style={{ flexDirection: 'row', gap: 8 }}>
-        <View style={{ flex: 1 }}><Button title="Cancel" variant="secondary" fullWidth onPress={onCancel} /></View>
-        <View style={{ flex: 1 }}><Button title="Use Barcode" fullWidth onPress={() => v.trim() && onDone(v.trim())} disabled={!v.trim()} /></View>
-      </View>
+      <ManualEntryModal
+        visible={manualVisible}
+        title="Enter Barcode"
+        message="Type the barcode manually and confirm to continue."
+        value={manualValue}
+        setValue={setManualValue}
+        onClose={closeManualEntry}
+        onSubmit={submitManualEntry}
+      />
     </>
   );
 }
 
-function NativeScanner({ visible, onClose, onScanned, title, torch, setTorch }: { visible: boolean; onClose: () => void; onScanned: (c: string) => void; title: string; torch: boolean; setTorch: (v: boolean) => void }) {
+function ManualEntryModal({
+  visible,
+  title,
+  message,
+  value,
+  setValue,
+  onClose,
+  onSubmit,
+}: {
+  visible: boolean;
+  title: string;
+  message: string;
+  value: string;
+  setValue: (v: string) => void;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
   const { theme } = useTheme();
-  // Lazy-require expo-camera so web bundle doesn't try to include native code.
-  const { CameraView, useCameraPermissions } = require('expo-camera');
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: theme.colors.overlay, justifyContent: 'center', padding: 24 }}>
+        <View style={{ backgroundColor: theme.colors.background, padding: 20, borderRadius: 16 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+            <MaterialIcons name="qr-code-scanner" size={28} color={theme.colors.primary} />
+            <Text style={{ marginLeft: 10, fontSize: 18, fontWeight: '800', color: theme.colors.text }}>{title}</Text>
+          </View>
+          <Text style={{ color: theme.colors.textSecondary, fontSize: 13, lineHeight: 20, marginBottom: 12 }}>
+            {message}
+          </Text>
+          <TextInput
+            value={value}
+            onChangeText={setValue}
+            placeholder="Barcode / SKU"
+            placeholderTextColor={theme.colors.textMuted}
+            autoFocus
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="done"
+            onSubmitEditing={onSubmit}
+            style={{
+              borderWidth: 1.5,
+              borderColor: theme.colors.border,
+              borderRadius: 10,
+              padding: 12,
+              color: theme.colors.text,
+              fontSize: 15,
+              marginBottom: 12,
+            }}
+          />
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <View style={{ flex: 1 }}><Button title="Cancel" variant="secondary" fullWidth onPress={onClose} /></View>
+            <View style={{ flex: 1 }}><Button title="Use Barcode" fullWidth onPress={onSubmit} disabled={!value.trim()} /></View>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function NativeScanner({
+  visible,
+  onClose,
+  onScanned,
+  onManualEntry,
+  title,
+  torch,
+  setTorch,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onScanned: (c: string) => void;
+  onManualEntry: () => void;
+  title: string;
+  torch: boolean;
+  setTorch: (v: boolean) => void;
+}) {
+  const { theme } = useTheme();
   const [permission, requestPermission] = useCameraPermissions();
 
   const openSettings = () => {
-    const { Linking } = require('react-native');
     Linking.openSettings().catch(() => Alert.alert('Cannot open settings'));
   };
 
@@ -126,6 +217,7 @@ function NativeScanner({ visible, onClose, onScanned, title, torch, setTorch }: 
             ) : (
               <Button title="Open Settings" fullWidth size="lg" icon="settings" onPress={openSettings} />
             )}
+            <Button title="Enter Manually" fullWidth variant="secondary" icon="keyboard" onPress={onManualEntry} style={{ marginTop: 8 }} />
             <Button title="Cancel" variant="ghost" fullWidth onPress={onClose} style={{ marginTop: 8 }} />
           </View>
         </View>
@@ -140,7 +232,9 @@ function NativeScanner({ visible, onClose, onScanned, title, torch, setTorch }: 
           style={StyleSheet.absoluteFill}
           facing="back"
           enableTorch={torch}
-          onBarcodeScanned={(res: any) => res?.data && onScanned(String(res.data))}
+          onBarcodeScanned={(res: BarcodeScanningResult) => {
+            if (res.data) onScanned(String(res.data));
+          }}
           barcodeScannerSettings={{
             barcodeTypes: ['qr', 'ean13', 'ean8', 'code128', 'code39', 'upc_a', 'upc_e', 'itf14', 'pdf417'],
           }}
@@ -170,14 +264,7 @@ function NativeScanner({ visible, onClose, onScanned, title, torch, setTorch }: 
           </View>
           {/* Bottom actions */}
           <View style={styles.bottomBar}>
-            <Button title="Enter Manually" variant="ghost" icon="keyboard" onPress={() => {
-              const { Alert } = require('react-native');
-              // fallback: close and let caller retry via manual — simplest approach: open Alert prompt on iOS
-              Alert.prompt?.('Enter Barcode', 'Type the barcode manually', [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'OK', onPress: (v: string) => v && onScanned(v.trim()) },
-              ]) || onClose();
-            }} />
+            <Button title="Enter Manually" variant="ghost" icon="keyboard" onPress={onManualEntry} />
           </View>
         </View>
       </View>

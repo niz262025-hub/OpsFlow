@@ -368,7 +368,7 @@ export async function renderPDF(html: string, filename: string, action: PdfActio
     try {
       await Print.printAsync({ html });
       return null;
-    } catch (e) {
+    } catch {
       // fall through to share
     }
   }

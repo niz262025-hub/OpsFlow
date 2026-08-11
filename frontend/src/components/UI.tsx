@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, ActivityIndicator, StyleSheet, ViewStyle, TextStyle } from 'react-native';
+import { View, Text, TouchableOpacity, ActivityIndicator, TextInput, ViewStyle, Modal, ScrollView, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useTheme } from '@/src/contexts/ThemeContext';
 import { radius, spacing } from '@/src/constants/theme';
@@ -98,11 +98,18 @@ interface InputProps {
   testID?: string;
   multiline?: boolean;
   numberOfLines?: number;
+  accessibilityLabel?: string;
+  autoFocus?: boolean;
+  returnKeyType?: any;
+  onSubmitEditing?: () => void;
+  inputRef?: React.Ref<TextInput>;
 }
-export function Input({ label, value, onChangeText, placeholder, icon, keyboardType, secureTextEntry, autoCapitalize, error, helper, prefix, editable = true, testID, multiline, numberOfLines }: InputProps) {
+export function Input({ label, value, onChangeText, placeholder, icon, keyboardType, secureTextEntry, autoCapitalize, error, helper, prefix, editable = true, testID, multiline, numberOfLines, accessibilityLabel, autoFocus, returnKeyType, onSubmitEditing, inputRef }: InputProps) {
   const { theme } = useTheme();
   const [focused, setFocused] = React.useState(false);
-  const { TextInput } = require('react-native');
+  const slug = React.useMemo(() => (label || placeholder || 'input').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''), [label, placeholder]);
+  const inputTestId = testID || (slug ? `input-${slug}` : undefined);
+  const resolvedAccessibilityLabel = accessibilityLabel || label || placeholder || 'Input';
   return (
     <View style={{ marginBottom: spacing.md }}>
       {label && <Text style={{ fontSize: 13, fontWeight: '600', color: theme.colors.text, marginBottom: 6 }}>{label}</Text>}
@@ -120,7 +127,9 @@ export function Input({ label, value, onChangeText, placeholder, icon, keyboardT
         {icon && <MaterialIcons name={icon} size={18} color={theme.colors.textSecondary} style={{ marginRight: 8 }} />}
         {prefix && <Text style={{ color: theme.colors.textSecondary, fontWeight: '600', marginRight: 6 }}>{prefix}</Text>}
         <TextInput
-          testID={testID}
+          ref={inputRef}
+          testID={inputTestId}
+          accessibilityLabel={resolvedAccessibilityLabel}
           value={value}
           onChangeText={onChangeText}
           placeholder={placeholder}
@@ -131,6 +140,9 @@ export function Input({ label, value, onChangeText, placeholder, icon, keyboardT
           editable={editable}
           multiline={multiline}
           numberOfLines={numberOfLines}
+          autoFocus={autoFocus}
+          returnKeyType={returnKeyType}
+          onSubmitEditing={onSubmitEditing}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           style={{ flex: 1, color: theme.colors.text, fontSize: 15, paddingVertical: multiline ? 0 : 12, textAlignVertical: multiline ? 'top' : 'center' }}
@@ -169,18 +181,21 @@ export function LoadingState({ label = 'Loading...' }: { label?: string }) {
 }
 
 // ---------- SearchBar ----------
-export function SearchBar({ value, onChangeText, placeholder = 'Search...', testID }: { value: string; onChangeText: (v: string) => void; placeholder?: string; testID?: string }) {
+export function SearchBar({ value, onChangeText, placeholder = 'Search...', testID, onSubmitEditing, returnKeyType, inputRef, autoFocus }: { value: string; onChangeText: (v: string) => void; placeholder?: string; testID?: string; onSubmitEditing?: () => void; returnKeyType?: any; inputRef?: React.Ref<TextInput>; autoFocus?: boolean }) {
   const { theme } = useTheme();
-  const { TextInput } = require('react-native');
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: theme.colors.surface, borderRadius: radius.md, paddingHorizontal: 14, borderWidth: 1, borderColor: theme.colors.border, height: 48 }}>
       <MaterialIcons name="search" size={20} color={theme.colors.textSecondary} />
       <TextInput
+        ref={inputRef}
         testID={testID}
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
         placeholderTextColor={theme.colors.textMuted}
+        returnKeyType={returnKeyType}
+        onSubmitEditing={onSubmitEditing}
+        autoFocus={autoFocus}
         style={{ flex: 1, marginLeft: 8, color: theme.colors.text, fontSize: 15 }}
       />
       {value.length > 0 && (
@@ -195,7 +210,7 @@ export function SearchBar({ value, onChangeText, placeholder = 'Search...', test
 // ---------- Screen wrapper ----------
 export function Screen({ children }: { children: React.ReactNode }) {
   const { theme } = useTheme();
-  return <View style={{ flex: 1, backgroundColor: theme.colors.background }}>{children}</View>;
+  return <View style={{ flex: 1, minHeight: 0, backgroundColor: theme.colors.background }}>{children}</View>;
 }
 
 // ---------- Header ----------
@@ -215,6 +230,176 @@ export function Header({ title, subtitle, right, onBack }: { title: string; subt
         </View>
       </View>
       {right}
+    </View>
+  );
+}
+
+// ---------- AppModal ----------
+export function AppModal({
+  visible,
+  title,
+  subtitle,
+  onClose,
+  footer,
+  children,
+  testID = 'app-modal',
+  closeButtonTestID = 'modal-close-button',
+}: {
+  visible: boolean;
+  title: string;
+  subtitle?: string;
+  onClose: () => void;
+  footer?: React.ReactNode;
+  children: React.ReactNode;
+  testID?: string;
+  closeButtonTestID?: string;
+}) {
+  const { theme } = useTheme();
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: theme.colors.overlay, justifyContent: 'center', padding: 16 }] }>
+          <View testID={testID} style={{ backgroundColor: theme.colors.background, borderRadius: radius.lg, maxHeight: '92%', overflow: 'hidden' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', padding: 16, borderBottomWidth: 1, borderBottomColor: theme.colors.border }}>
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <Text style={{ fontSize: 18, fontWeight: '800', color: theme.colors.text }}>{title}</Text>
+                {subtitle ? <Text style={{ marginTop: 4, fontSize: 12, color: theme.colors.textSecondary, lineHeight: 18 }}>{subtitle}</Text> : null}
+              </View>
+              <TouchableOpacity testID={closeButtonTestID} onPress={onClose} style={{ padding: 4 }} accessibilityRole="button" accessibilityLabel="Close modal">
+                <MaterialIcons name="close" size={24} color={theme.colors.text} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              {children}
+            </ScrollView>
+            {footer ? <View style={{ padding: 16, borderTopWidth: 1, borderTopColor: theme.colors.border }}>{footer}</View> : null}
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+type DataTableColumn<T> = {
+  key: string;
+  title: string;
+  width?: number;
+  sortValue?: (row: T) => string | number;
+  render?: (row: T) => React.ReactNode;
+};
+
+export function DataTable<T extends { id?: string; uid?: string }>({
+  rows,
+  columns,
+  selectable = false,
+  onBulkDelete,
+}: {
+  rows: T[];
+  columns: DataTableColumn<T>[];
+  selectable?: boolean;
+  onBulkDelete?: (ids: string[]) => Promise<void> | void;
+  exportFileName?: string;
+}) {
+  const { theme } = useTheme();
+  const [sortKey, setSortKey] = React.useState<string | null>(null);
+  const [sortAsc, setSortAsc] = React.useState(true);
+  const [selected, setSelected] = React.useState<Set<string>>(new Set());
+
+  const getRowId = React.useCallback((row: T, index: number) => row.id || row.uid || String(index), []);
+
+  const sortedRows = React.useMemo(() => {
+    if (!sortKey) return rows;
+    const column = columns.find((item) => item.key === sortKey);
+    if (!column?.sortValue) return rows;
+    return [...rows].sort((left, right) => {
+      const a = column.sortValue ? column.sortValue(left) : '';
+      const b = column.sortValue ? column.sortValue(right) : '';
+      const result = String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+      return sortAsc ? result : -result;
+    });
+  }, [columns, rows, sortAsc, sortKey]);
+
+  const toggleSort = (column: DataTableColumn<T>) => {
+    if (!column.sortValue) return;
+    setSortAsc((currentAsc) => (sortKey === column.key ? !currentAsc : true));
+    setSortKey((currentKey) => (currentKey === column.key ? currentKey : column.key));
+  };
+
+  const toggleSelected = (row: T, index: number) => {
+    const id = getRowId(row, index);
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    setSelected((current) => {
+      if (current.size === sortedRows.length) return new Set();
+      return new Set(sortedRows.map((row, index) => getRowId(row, index)));
+    });
+  };
+
+  return (
+    <View style={{ borderWidth: 1, borderColor: theme.colors.border, borderRadius: radius.lg, overflow: 'hidden', backgroundColor: theme.colors.background }}>
+      {selectable && onBulkDelete ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: theme.colors.border, backgroundColor: theme.colors.surface }}>
+          <TouchableOpacity onPress={toggleAll} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <MaterialIcons name={selected.size === sortedRows.length && sortedRows.length > 0 ? 'check-box' : 'check-box-outline-blank'} size={20} color={theme.colors.primary} />
+            <Text style={{ color: theme.colors.text, fontWeight: '600' }}>{selected.size > 0 ? `${selected.size} selected` : 'Select all'}</Text>
+          </TouchableOpacity>
+          {selected.size > 0 ? (
+            <TouchableOpacity onPress={() => onBulkDelete(Array.from(selected))} style={{ paddingHorizontal: 10, paddingVertical: 6 }}>
+              <Text style={{ color: theme.colors.error, fontWeight: '700' }}>Delete selected</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      ) : null}
+
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <View>
+          <View style={{ flexDirection: 'row', backgroundColor: theme.colors.surface, borderBottomWidth: 1, borderBottomColor: theme.colors.border }}>
+            {selectable ? <View style={{ width: 44, padding: 12 }} /> : null}
+            {columns.map((column) => (
+              <TouchableOpacity
+                key={column.key}
+                onPress={() => toggleSort(column)}
+                disabled={!column.sortValue}
+                style={{ width: column.width || 160, paddingHorizontal: 12, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 4 }}
+              >
+                <Text style={{ color: theme.colors.textSecondary, fontWeight: '700', fontSize: 12 }}>{column.title}</Text>
+                {sortKey === column.key ? <MaterialIcons name={sortAsc ? 'arrow-drop-up' : 'arrow-drop-down'} size={18} color={theme.colors.primary} /> : null}
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {sortedRows.length === 0 ? (
+            <View style={{ padding: 20 }}>
+              <Text style={{ color: theme.colors.textSecondary }}>No data available</Text>
+            </View>
+          ) : (
+            sortedRows.map((row, rowIndex) => {
+              const rowId = getRowId(row, rowIndex);
+              const isSelected = selected.has(rowId);
+              return (
+                <View key={rowId} style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: theme.colors.border, backgroundColor: isSelected ? theme.colors.primaryLight : theme.colors.background }}>
+                  {selectable ? (
+                    <TouchableOpacity onPress={() => toggleSelected(row, rowIndex)} style={{ width: 44, alignItems: 'center', justifyContent: 'center' }}>
+                      <MaterialIcons name={isSelected ? 'check-box' : 'check-box-outline-blank'} size={20} color={theme.colors.primary} />
+                    </TouchableOpacity>
+                  ) : null}
+                  {columns.map((column) => (
+                    <View key={column.key} style={{ width: column.width || 160, paddingHorizontal: 12, paddingVertical: 12, justifyContent: 'center' }}>
+                      {column.render ? column.render(row) : <Text style={{ color: theme.colors.text, fontSize: 13 }}>{String((row as any)[column.key] ?? '-')}</Text>}
+                    </View>
+                  ))}
+                </View>
+              );
+            })
+          )}
+        </View>
+      </ScrollView>
     </View>
   );
 }

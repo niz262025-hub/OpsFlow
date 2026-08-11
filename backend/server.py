@@ -10,7 +10,7 @@ import os
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from bson import ObjectId
 
 ROOT_DIR = Path(__file__).parent
@@ -27,10 +27,92 @@ security = HTTPBearer()
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "bizflow-secret-key-change-in-production")
 ALGORITHM = "HS256"
 TRIAL_DAYS = 14
+VALID_PAYMENT_METHODS = {"Cash", "QR", "Bank Transfer", "Transfer"}
 
 # Create the main app
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
+
+
+def _utc_now() -> datetime:
+    return datetime.utcnow()
+
+
+def _serialize_datetime(value: Any) -> Any:
+    return value.isoformat() if isinstance(value, datetime) else value
+
+
+def _derive_company_status(company: Dict[str, Any]) -> str:
+    explicit_status = (company.get("status") or "").strip()
+    if explicit_status:
+        return explicit_status
+
+    trial_end = company.get("trialEnd")
+    subscription_end = company.get("subscriptionEnd")
+    now = _utc_now()
+    if trial_end:
+        try:
+            trial_end_dt = trial_end if isinstance(trial_end, datetime) else datetime.fromisoformat(str(trial_end))
+            if trial_end_dt < now:
+                return "Expired"
+        except Exception:
+            pass
+
+    if subscription_end:
+        try:
+            sub_end_dt = subscription_end if isinstance(subscription_end, datetime) else datetime.fromisoformat(str(subscription_end))
+            if sub_end_dt < now:
+                return "Expired"
+        except Exception:
+            pass
+
+    return "Trial"
+
+
+def _get_admin_credentials() -> Dict[str, str]:
+    return {
+        "email": os.getenv("SUPER_ADMIN_EMAIL", "superadmin@bizflow.my"),
+        "password": os.getenv("SUPER_ADMIN_PASSWORD", "BizFlow2026!"),
+    }
+
+
+def _company_plan_price(plan: Optional[str]) -> float:
+    plan_name = (plan or "Basic").strip().lower()
+    if plan_name in {"pro", "advance"}:
+        return 299.0 if plan_name == "pro" else 499.0
+    return 99.0
+
+
+def _company_payload(company: Dict[str, Any], include_id: bool = True) -> Dict[str, Any]:
+    status = _derive_company_status(company)
+    trial_end = company.get("trialEnd")
+    subscription_end = company.get("subscriptionEnd")
+    now = _utc_now()
+    payload: Dict[str, Any] = {
+        "companyName": company.get("companyName") or company.get("company_name") or "",
+        "ownerName": company.get("ownerName") or "",
+        "email": company.get("email") or "",
+        "phone": company.get("phone") or "",
+        "plan": company.get("plan") or "Basic",
+        "status": status,
+        "trialEnd": _serialize_datetime(trial_end),
+        "subscriptionEnd": _serialize_datetime(subscription_end),
+        "lastLogin": _serialize_datetime(company.get("lastLogin")),
+        "createdAt": _serialize_datetime(company.get("createdAt")),
+        "updatedAt": _serialize_datetime(company.get("updatedAt")),
+        "trialRemainingDays": 0,
+        "monthlyRevenue": _company_plan_price(company.get("plan")) if status == "Active" else 0.0,
+    }
+    if trial_end:
+        try:
+            trial_end_dt = trial_end if isinstance(trial_end, datetime) else datetime.fromisoformat(str(trial_end))
+            payload["trialRemainingDays"] = max(0, (trial_end_dt - now).days)
+        except Exception:
+            payload["trialRemainingDays"] = 0
+
+    if include_id:
+        payload["id"] = str(company.get("_id")) if company.get("_id") is not None else company.get("id")
+    return payload
 
 # Helper functions
 def hash_password(password: str) -> str:
@@ -46,6 +128,18 @@ def create_access_token(data: dict):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
+
+def normalize_payment_method(payment_method: Optional[str]) -> str:
+    if not payment_method:
+        return "Cash"
+    normalized = payment_method.strip()
+    if normalized.lower() in {"qr", "qrcode"}:
+        return "QR"
+    if normalized.lower() in {"bank transfer", "bank-transfer", "bank", "transfer"}:
+        return "Bank Transfer"
+    return "Cash" if normalized.lower() in {"cash", "cash payment"} else normalized
+
+
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     try:
         token = credentials.credentials
@@ -57,6 +151,15 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         user = await db.users.find_one({"_id": ObjectId(user_id)})
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
+
+        company = None
+        if user.get("email"):
+            company = await db.companies.find_one({"email": user["email"]})
+
+        if company:
+            status = _derive_company_status(company)
+            if status in {"Expired", "Suspended"}:
+                raise HTTPException(status_code=403, detail="Account is suspended or expired")
         
         # Check trial expiration
         trial_start = user.get("trial_start_date")
@@ -73,6 +176,23 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
     except Exception as e:
+        raise HTTPException(status_code=401, detail="Invalid authentication")
+
+
+async def get_current_admin(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    try:
+        token = credentials.credentials
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("role") != "super_admin":
+            raise HTTPException(status_code=403, detail="Forbidden")
+
+        expected = _get_admin_credentials()
+        if payload.get("email") != expected["email"]:
+            raise HTTPException(status_code=403, detail="Forbidden")
+        return payload
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except Exception:
         raise HTTPException(status_code=401, detail="Invalid authentication")
 
 # Models
@@ -114,12 +234,30 @@ class ProductUpdate(BaseModel):
 class SaleCreate(BaseModel):
     product_id: str
     quantity: int
-    payment_method: str  # "Cash" or "QR"
+    payment_method: str
+    payment_reference: Optional[str] = None
 
 class SettingsUpdate(BaseModel):
     company_name: Optional[str] = None
     low_stock_threshold: Optional[int] = None
     company_logo: Optional[str] = None  # base64 encoded
+
+class AdminLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+class AdminPlanUpdate(BaseModel):
+    plan: str
+
+class AdminResetPassword(BaseModel):
+    password: str
+
+class PaymentSuccessCallback(BaseModel):
+    companyId: Optional[str] = None
+    email: Optional[str] = None
+    amount: float = 49.0
+    method: str = "Bank Transfer"
+    reference: Optional[str] = None
 
 # Auth Routes
 @api_router.post("/auth/register")
@@ -145,6 +283,24 @@ async def register(user_data: UserRegister):
     
     result = await db.users.insert_one(new_user)
     user_id = str(result.inserted_id)
+
+    now = _utc_now()
+    await db.companies.insert_one({
+        "userId": user_id,
+        "companyName": user_data.company_name,
+        "ownerName": user_data.company_name,
+        "email": str(user_data.email),
+        "phone": "",
+        "plan": "Basic",
+        "status": "Trial",
+        "trialStart": now,
+        "trialEnd": now + timedelta(days=TRIAL_DAYS),
+        "subscriptionStart": None,
+        "subscriptionEnd": None,
+        "lastLogin": None,
+        "createdAt": now,
+        "updatedAt": now,
+    })
     
     # Create default categories for new user
     default_categories = [
@@ -190,6 +346,16 @@ async def login(credentials: UserLogin):
             {"$set": {"trial_expired": True}}
         )
     
+    company = await db.companies.find_one({"email": user["email"]})
+    if company:
+        status = _derive_company_status(company)
+        if status in {"Expired", "Suspended"}:
+            raise HTTPException(status_code=403, detail="Account is suspended or expired")
+        await db.companies.update_one(
+            {"_id": company.get("_id")},
+            {"$set": {"lastLogin": _utc_now(), "updatedAt": _utc_now()}},
+        )
+
     access_token = create_access_token({"user_id": user_id})
     
     return {
@@ -225,6 +391,244 @@ async def get_me(current_user: dict = Depends(get_current_user)):
         "currency": current_user.get("currency", "MYR"),
         "company_logo": current_user.get("company_logo")
     }
+
+# Super Admin Routes
+@api_router.post("/admin/login")
+async def admin_login(credentials: AdminLogin):
+    expected = _get_admin_credentials()
+    if str(credentials.email).lower() != expected["email"].lower() or credentials.password != expected["password"]:
+        raise HTTPException(status_code=401, detail="Invalid admin credentials")
+
+    access_token = create_access_token({"user_id": "admin", "role": "super_admin", "email": expected["email"]})
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {"email": expected["email"], "role": "super_admin"},
+    }
+
+
+@api_router.get("/admin/summary")
+async def admin_summary(current_admin: dict = Depends(get_current_admin)):
+    companies = await db.companies.find({}).to_list(1000)
+    now = _utc_now()
+
+    total_companies = len(companies)
+    trial_companies = sum(1 for company in companies if _derive_company_status(company) == "Trial")
+    active_subscriptions = sum(1 for company in companies if _derive_company_status(company) == "Active")
+    expired_subscriptions = sum(1 for company in companies if _derive_company_status(company) == "Expired")
+
+    monthly_revenue = sum(_company_plan_price(company.get("plan")) for company in companies if _derive_company_status(company) == "Active")
+    today_registrations = sum(1 for company in companies if company.get("createdAt"))
+    return {
+        "totalCompanies": total_companies,
+        "trialCompanies": trial_companies,
+        "activeSubscriptions": active_subscriptions,
+        "expiredSubscriptions": expired_subscriptions,
+        "monthlyRevenue": round(monthly_revenue, 2),
+        "todayRegistrations": today_registrations,
+    }
+
+
+@api_router.get("/admin/companies")
+async def admin_companies(
+    search: Optional[str] = None,
+    status: Optional[str] = None,
+    plan: Optional[str] = None,
+    trial_ending_in_next_3_days: bool = False,
+    expired: bool = False,
+    active: bool = False,
+    current_admin: dict = Depends(get_current_admin),
+):
+    companies = await db.companies.find({}).sort("createdAt", -1).to_list(1000)
+    results = []
+    now = _utc_now()
+
+    for company in companies:
+        derived_status = _derive_company_status(company)
+
+        if status and derived_status.lower() != status.lower():
+            continue
+        if plan and (company.get("plan") or "Basic") != plan:
+            continue
+        if expired and derived_status != "Expired":
+            continue
+        if active and derived_status != "Active":
+            continue
+        if trial_ending_in_next_3_days:
+            trial_end = company.get("trialEnd")
+            if not trial_end:
+                continue
+            try:
+                trial_end_dt = trial_end if isinstance(trial_end, datetime) else datetime.fromisoformat(str(trial_end))
+                if derived_status != "Trial" or trial_end_dt < now or trial_end_dt > now + timedelta(days=3):
+                    continue
+            except Exception:
+                continue
+
+        if search:
+            haystack = " ".join([
+                str(company.get("companyName") or ""),
+                str(company.get("ownerName") or ""),
+                str(company.get("email") or ""),
+                str(company.get("phone") or ""),
+            ]).lower()
+            if search.lower() not in haystack:
+                continue
+
+        results.append(_company_payload(company))
+
+    return results
+
+
+@api_router.get("/admin/companies/{company_id}")
+async def admin_company_detail(company_id: str, current_admin: dict = Depends(get_current_admin)):
+    company = await db.companies.find_one({"_id": ObjectId(company_id)})
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+
+    return {
+        **_company_payload(company),
+        "businessName": company.get("businessName") or company.get("companyName"),
+        "registrationDate": _serialize_datetime(company.get("createdAt")),
+        "trialStart": _serialize_datetime(company.get("trialStart")),
+        "trialEnd": _serialize_datetime(company.get("trialEnd")),
+        "subscriptionStart": _serialize_datetime(company.get("subscriptionStart")),
+        "subscriptionEnd": _serialize_datetime(company.get("subscriptionEnd")),
+        "nextBillingDate": _serialize_datetime(company.get("subscriptionEnd")),
+        "paymentStatus": "Paid" if company.get("subscriptionEnd") else "Pending",
+        "subscriptionHistory": company.get("subscriptionHistory") or [],
+        "paymentHistory": company.get("paymentHistory") or [{"date": _serialize_datetime(company.get("createdAt")), "method": "Bank Transfer", "amount": 49.0, "status": "Paid", "referenceNumber": "AUTO-INIT"}],
+        "loginHistory": company.get("loginHistory") or [],
+        "deviceList": company.get("deviceList") or [{"type": "Web", "lastSeen": _serialize_datetime(company.get("lastLogin"))}],
+        "activitySummary": {
+            "totalSales": 0,
+            "totalPurchaseOrders": 0,
+            "totalProducts": 0,
+            "totalUsers": 1,
+            "lastPOSTransaction": None,
+            "lastPurchaseTransaction": None,
+        },
+    }
+
+
+@api_router.post("/admin/companies/{company_id}/extend-trial")
+async def admin_extend_trial(company_id: str, current_admin: dict = Depends(get_current_admin)):
+    company = await db.companies.find_one({"_id": ObjectId(company_id)})
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+
+    current_trial_end = company.get("trialEnd")
+    if isinstance(current_trial_end, datetime):
+        new_trial_end = current_trial_end + timedelta(days=7)
+    else:
+        try:
+            new_trial_end = datetime.fromisoformat(str(current_trial_end)) + timedelta(days=7)
+        except Exception:
+            new_trial_end = _utc_now() + timedelta(days=7)
+
+    await db.companies.update_one(
+        {"_id": ObjectId(company_id)},
+        {"$set": {"trialEnd": new_trial_end, "status": "Trial", "updatedAt": _utc_now()}},
+    )
+    return {"message": "Trial extended"}
+
+
+@api_router.post("/admin/companies/{company_id}/activate-subscription")
+async def admin_activate_subscription(company_id: str, current_admin: dict = Depends(get_current_admin)):
+    company = await db.companies.find_one({"_id": ObjectId(company_id)})
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+
+    now = _utc_now()
+    await db.companies.update_one(
+        {"_id": ObjectId(company_id)},
+        {"$set": {"status": "Active", "subscriptionStart": now, "subscriptionEnd": now + timedelta(days=30), "updatedAt": now}},
+    )
+    return {"message": "Subscription activated"}
+
+
+@api_router.post("/admin/companies/{company_id}/suspend")
+async def admin_suspend_company(company_id: str, current_admin: dict = Depends(get_current_admin)):
+    company = await db.companies.find_one({"_id": ObjectId(company_id)})
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+
+    await db.companies.update_one(
+        {"_id": ObjectId(company_id)},
+        {"$set": {"status": "Suspended", "updatedAt": _utc_now()}},
+    )
+    return {"message": "Account suspended"}
+
+
+@api_router.post("/admin/companies/{company_id}/plan")
+async def admin_change_plan(company_id: str, payload: AdminPlanUpdate, current_admin: dict = Depends(get_current_admin)):
+    company = await db.companies.find_one({"_id": ObjectId(company_id)})
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+
+    await db.companies.update_one(
+        {"_id": ObjectId(company_id)},
+        {"$set": {"plan": payload.plan, "updatedAt": _utc_now()}},
+    )
+    return {"message": "Plan updated"}
+
+
+@api_router.post("/admin/companies/{company_id}/reset-password")
+async def admin_reset_password(company_id: str, payload: AdminResetPassword, current_admin: dict = Depends(get_current_admin)):
+    company = await db.companies.find_one({"_id": ObjectId(company_id)})
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+
+    await db.users.update_one(
+        {"email": company.get("email")},
+        {"$set": {"password": hash_password(payload.password), "updated_at": _utc_now()}},
+    )
+    return {"message": "Password reset"}
+
+
+@api_router.post("/admin/companies/{company_id}/impersonate")
+async def admin_impersonate(company_id: str, current_admin: dict = Depends(get_current_admin)):
+    company = await db.companies.find_one({"_id": ObjectId(company_id)})
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+
+    access_token = create_access_token({"user_id": str(company.get("_id")), "role": "company", "email": company.get("email")})
+    return {"access_token": access_token, "token_type": "bearer"}
+
+
+@api_router.post("/subscriptions/payment-success")
+async def payment_success_callback(payload: PaymentSuccessCallback):
+    company = None
+    if payload.companyId:
+        company = await db.companies.find_one({"_id": ObjectId(payload.companyId)})
+    if not company and payload.email:
+        company = await db.companies.find_one({"email": payload.email})
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+
+    now = _utc_now()
+    subscription_end = now + timedelta(days=30)
+    payment_record = {
+        "date": now,
+        "method": payload.method,
+        "amount": payload.amount,
+        "status": "Paid",
+        "referenceNumber": payload.reference or f"PAY-{now.strftime('%Y%m%d%H%M%S')}",
+    }
+
+    await db.companies.update_one(
+        {"_id": company.get("_id")},
+        {"$set": {
+            "status": "Active",
+            "plan": company.get("plan") or "Basic",
+            "subscriptionStart": now,
+            "subscriptionEnd": subscription_end,
+            "paymentStatus": "Paid",
+            "updatedAt": now,
+        }, "$push": {"paymentHistory": payment_record}},
+    )
+    return {"message": "Subscription activated", "paymentStatus": "Paid"}
+
 
 # Category Routes
 @api_router.get("/categories")
@@ -405,8 +809,8 @@ async def create_sale(sale: SaleCreate, current_user: dict = Depends(get_current
     if sale.quantity <= 0:
         raise HTTPException(status_code=400, detail="Quantity must be greater than zero")
     
-    # Validate payment method
-    if sale.payment_method not in ["Cash", "QR"]:
+    normalized_payment_method = normalize_payment_method(sale.payment_method)
+    if normalized_payment_method not in VALID_PAYMENT_METHODS:
         raise HTTPException(status_code=400, detail="Invalid payment method")
     
     # Validate product_id format
@@ -454,7 +858,8 @@ async def create_sale(sale: SaleCreate, current_user: dict = Depends(get_current
         "selling_price": unit_price,  # explicit alias for clarity
         "total_price": total_price,
         "total_amount": total_price,  # explicit alias for clarity
-        "payment_method": sale.payment_method,
+        "payment_method": normalized_payment_method,
+        "payment_reference": sale.payment_reference.strip() if sale.payment_reference and sale.payment_reference.strip() else None,
         "user_id": user_id,
         "created_at": now,
         "date": now,
@@ -493,7 +898,8 @@ async def create_sale(sale: SaleCreate, current_user: dict = Depends(get_current
         "selling_price": unit_price,
         "total_price": total_price,
         "total_amount": total_price,
-        "payment_method": sale.payment_method,
+        "payment_method": normalized_payment_method,
+        "payment_reference": sale.payment_reference.strip() if sale.payment_reference and sale.payment_reference.strip() else None,
         "stock_after": updated_product["stock_quantity"],
         "created_at": now.isoformat(),
     }
@@ -512,7 +918,8 @@ async def get_sales(current_user: dict = Depends(get_current_user)):
         "selling_price": sale.get("selling_price", sale["unit_price"]),
         "total_price": sale["total_price"],
         "total_amount": sale.get("total_amount", sale["total_price"]),
-        "payment_method": sale["payment_method"],
+        "payment_method": sale.get("payment_method"),
+        "payment_reference": sale.get("payment_reference"),
         "created_at": sale["created_at"].isoformat()
     } for sale in sales]
 

@@ -10,27 +10,76 @@ service cloud.firestore {
     function isManager() { return myRole() in ['admin', 'manager']; }
 
     match /users/{uid} {
-      allow read: if isSignedIn() && (request.auth.uid == uid || myCompanyId() == resource.data.companyId);
+      allow read: if isSignedIn() && (request.auth.uid == uid || (resource.data.companyId != null && myCompanyId() == resource.data.companyId));
       allow create: if isSignedIn() && request.auth.uid == uid;
-      allow update: if isSignedIn() && (request.auth.uid == uid || (myCompanyId() == resource.data.companyId && isAdmin()));
+      allow update: if isSignedIn() && (request.auth.uid == uid || ((resource.data.companyId != null && myCompanyId() == resource.data.companyId) && isAdmin()));
       allow delete: if isSignedIn() && isAdmin();
     }
 
     match /companies/{companyId} {
-      allow read: if isSignedIn() && myCompanyId() == companyId;
-      allow create: if isSignedIn();
-      allow update, delete: if isSignedIn() && myCompanyId() == companyId && isAdmin();
+      allow read: if isSignedIn() && ((resource.data.ownerUid == request.auth.uid) || (resource.data.ownerUid != null && myCompanyId() == companyId));
+      allow create: if isSignedIn() && request.resource.data.ownerUid == request.auth.uid;
+      allow update, delete: if isSignedIn() && ((resource.data.ownerUid == request.auth.uid) || (myCompanyId() == companyId && isAdmin()));
+    }
+
+    match /invite_codes/{inviteId} {
+      // Managers/admins of the same company can read invite codes.
+      allow read: if isSignedIn() && myCompanyId() == resource.data.companyId && isManager();
+
+      // Managers/admins can create invite codes for their own company.
+      allow create: if isSignedIn()
+        && isManager()
+        && request.resource.data.companyId == myCompanyId()
+        && request.resource.data.code is string
+        && request.resource.data.role in ['admin', 'manager', 'cashier']
+        && request.resource.data.used == false;
+
+      // A signed-in user may claim an unused invite code exactly once.
+      allow update: if isSignedIn() && (
+        (myCompanyId() == resource.data.companyId && isManager()) ||
+        (
+          resource.data.used == false
+          && request.resource.data.used == true
+          && request.resource.data.usedBy == request.auth.uid
+          && request.resource.data.companyId == resource.data.companyId
+          && request.resource.data.code == resource.data.code
+          && request.resource.data.role == resource.data.role
+        )
+      );
+
+      allow delete: if isSignedIn() && myCompanyId() == resource.data.companyId && isManager();
+    }
+
+    match /purchase_orders/{purchaseOrderId} {
+      allow read: if isSignedIn() && resource.data.companyId == myCompanyId();
+      allow create: if isSignedIn() && request.resource.data.companyId == myCompanyId() && isManager();
+      allow update: if isSignedIn() && resource.data.companyId == myCompanyId() && isManager();
+      allow delete: if isSignedIn() && resource.data.companyId == myCompanyId() && isManager();
+    }
+
+    match /purchase_orders/{purchaseOrderId}/items/{itemId} {
+      allow read: if isSignedIn() && resource.data.companyId == myCompanyId();
+      allow create: if isSignedIn() && request.resource.data.companyId == myCompanyId() && isManager();
+      allow update: if isSignedIn() && resource.data.companyId == myCompanyId() && isManager();
+      allow delete: if isSignedIn() && resource.data.companyId == myCompanyId() && isManager();
+    }
+
+    match /purchase_orders/{purchaseOrderId}/pending_references/{pendingId} {
+      allow read: if isSignedIn() && resource.data.companyId == myCompanyId();
+      allow create: if isSignedIn() && request.resource.data.companyId == myCompanyId() && isManager();
+      allow update: if isSignedIn() && resource.data.companyId == myCompanyId() && isManager();
+      allow delete: if isSignedIn() && resource.data.companyId == myCompanyId() && isManager();
     }
 
     match /{col}/{docId} {
       allow read: if isSignedIn() && resource.data.companyId == myCompanyId()
-        && col in ['products','categories','suppliers','customers','purchases','sales','expenses','stock_movements','notifications','settings'];
+        && col in ['products','categories','suppliers','customers','purchases','sales','expenses','stock_movements','cash_ledger','bank_accounts','bank_ledger','capital_entries','notifications','settings'];
       allow create: if isSignedIn() && request.resource.data.companyId == myCompanyId()
-        && col in ['products','categories','suppliers','customers','purchases','sales','expenses','stock_movements','notifications','settings'];
+        && col in ['products','categories','suppliers','customers','purchases','sales','expenses','stock_movements','cash_ledger','bank_accounts','bank_ledger','capital_entries','notifications','settings'];
       allow update: if isSignedIn() && resource.data.companyId == myCompanyId() && isManager()
-        && col in ['products','categories','suppliers','customers','purchases','sales','expenses','stock_movements','notifications','settings'];
+        && col in ['products','categories','suppliers','customers','purchases','sales','expenses','stock_movements','cash_ledger','bank_accounts','bank_ledger','capital_entries','notifications','settings'];
       allow delete: if isSignedIn() && resource.data.companyId == myCompanyId() && isAdmin()
-        && col in ['products','categories','suppliers','customers','purchases','sales','expenses','stock_movements','notifications','settings'];
+        && col in ['products','categories','suppliers','customers','purchases','sales','expenses','stock_movements','cash_ledger','bank_accounts','bank_ledger','capital_entries','notifications','settings'];
     }
   }
 }

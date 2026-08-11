@@ -18,9 +18,29 @@
 // with no error in the logs.
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as SecureStore from "expo-secure-store";
 
 import { AssertNoExtras, StorageBase, StorageItemValue } from "./storage-base";
+
+type SecureStoreModule = {
+  getItemAsync: (key: string) => Promise<string | null>;
+  setItemAsync: (key: string, value: string) => Promise<void>;
+  deleteItemAsync: (key: string) => Promise<void>;
+};
+
+let secureStoreModule: SecureStoreModule | null = null;
+
+async function getSecureStore(): Promise<SecureStoreModule | null> {
+  if (secureStoreModule) return secureStoreModule;
+
+  try {
+    const mod = await import("expo-secure-store");
+    secureStoreModule = mod as SecureStoreModule;
+    return secureStoreModule;
+  } catch (e) {
+    secureStoreModule = null;
+    return null;
+  }
+}
 
 export class Storage extends StorageBase {
   // General KV — backed by AsyncStorage.
@@ -67,8 +87,13 @@ export class Storage extends StorageBase {
     key: string,
     fallback: Fallback,
   ): Promise<Fallback | null> {
+    const secureStore = await getSecureStore();
+    if (!secureStore) {
+      return fallback;
+    }
+
     try {
-      const raw = await SecureStore.getItemAsync(key);
+      const raw = await secureStore.getItemAsync(key);
       return this.retrieve(raw, fallback);
     } catch (e) {
       this.warn("secureGet", key, e);
@@ -80,8 +105,13 @@ export class Storage extends StorageBase {
     key: string,
     value: Value,
   ): Promise<boolean> {
+    const secureStore = await getSecureStore();
+    if (!secureStore) {
+      return false;
+    }
+
     try {
-      await SecureStore.setItemAsync(key, JSON.stringify(value));
+      await secureStore.setItemAsync(key, JSON.stringify(value));
       return true;
     } catch (e) {
       this.warn("secureSet", key, e);
@@ -90,8 +120,13 @@ export class Storage extends StorageBase {
   }
 
   async secureRemove(key: string): Promise<boolean> {
+    const secureStore = await getSecureStore();
+    if (!secureStore) {
+      return false;
+    }
+
     try {
-      await SecureStore.deleteItemAsync(key);
+      await secureStore.deleteItemAsync(key);
       return true;
     } catch (e) {
       this.warn("secureRemove", key, e);

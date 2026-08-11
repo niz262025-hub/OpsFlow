@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Alert, StyleSheet, Platform } from 'react-native';
+import { View, Text, ScrollView, Alert, StyleSheet, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Sharing from 'expo-sharing';
@@ -7,7 +7,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useTheme } from '@/src/contexts/ThemeContext';
 import { useData } from '@/src/contexts/DataContext';
 import { usePermissions } from '@/src/hooks/usePermissions';
-import { Badge, Button, Card, Header, Screen } from '@/src/components/UI';
+import { Button, Card, Header, Screen } from '@/src/components/UI';
 
 export default function BackupPage() {
   const { theme } = useTheme();

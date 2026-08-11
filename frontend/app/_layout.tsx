@@ -1,7 +1,7 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { LogBox, StatusBar } from 'react-native';
+import { LogBox, StatusBar, Text, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useIconFonts } from '@/src/hooks/use-icon-fonts';
@@ -19,12 +19,48 @@ function StatusBarWrap() {
 
 export default function RootLayout() {
   const [loaded, error] = useIconFonts();
+  const [renderError, setRenderError] = useState<string | null>(null);
+  const [bootFallbackReady, setBootFallbackReady] = useState(false);
 
   useEffect(() => {
-    if (loaded || error) SplashScreen.hideAsync();
-  }, [loaded, error]);
+    const fallbackTimer = setTimeout(() => setBootFallbackReady(true), 2500);
+    return () => clearTimeout(fallbackTimer);
+  }, []);
 
-  if (!loaded && !error) return null;
+  useEffect(() => {
+    try {
+      if (loaded || error || bootFallbackReady) {
+        void SplashScreen.hideAsync();
+      }
+    } catch (e) {
+      setRenderError(e instanceof Error ? e.message : 'Unable to hide splash screen');
+    }
+  }, [bootFallbackReady, error, loaded]);
+
+  useEffect(() => {
+    const original = console.error;
+    console.error = (...args: any[]) => {
+      const text = args.join(' ');
+      if (text.includes('Cannot read property') || text.includes('undefined is not')) {
+        setRenderError(text);
+      }
+      original(...args);
+    };
+
+    return () => {
+      console.error = original;
+    };
+  }, []);
+
+  if (!loaded && !error && !bootFallbackReady) return null;
+
+  if (renderError) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <Text style={{ fontSize: 16, fontWeight: '600', textAlign: 'center' }}>{renderError}</Text>
+      </View>
+    );
+  }
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -35,16 +71,9 @@ export default function RootLayout() {
             <DataProvider>
               <Stack screenOptions={{ headerShown: false, animation: 'fade' }}>
                 <Stack.Screen name="index" />
-                <Stack.Screen name="(auth)/login" />
-                <Stack.Screen name="(auth)/register" />
-                <Stack.Screen name="(auth)/forgot-password" />
-                <Stack.Screen name="(setup)/company-setup" />
-                <Stack.Screen name="(tabs)" />
-                <Stack.Screen name="team" options={{ animation: 'slide_from_right' }} />
-                <Stack.Screen name="purchases" options={{ animation: 'slide_from_right' }} />
-                <Stack.Screen name="expenses" options={{ animation: 'slide_from_right' }} />
-                <Stack.Screen name="customers" options={{ animation: 'slide_from_right' }} />
-                <Stack.Screen name="backup" options={{ animation: 'slide_from_right' }} />
+                <Stack.Screen name="login" />
+                <Stack.Screen name="register" />
+                <Stack.Screen name="demo" />
               </Stack>
             </DataProvider>
           </AuthProvider>

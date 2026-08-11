@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Alert, Modal, StyleSheet, Platform, Share } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Alert, StyleSheet, Platform, Share } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
@@ -8,7 +8,7 @@ import { useTheme } from '@/src/contexts/ThemeContext';
 import { useData } from '@/src/contexts/DataContext';
 import { useAuth, Role } from '@/src/contexts/AuthContext';
 import { usePermissions, ROLE_DESCRIPTIONS, ROLE_LABELS } from '@/src/hooks/usePermissions';
-import { Badge, Button, Card, EmptyState, Header, Screen } from '@/src/components/UI';
+import { AppModal, Badge, Button, Card, DataTable, EmptyState, Header, Screen } from '@/src/components/UI';
 
 export default function TeamPage() {
   const { theme } = useTheme();
@@ -19,6 +19,8 @@ export default function TeamPage() {
   const [creating, setCreating] = useState(false);
   const [newRole, setNewRole] = useState<Role>('cashier');
   const [changeModal, setChangeModal] = useState<{ uid: string; email: string; role: Role } | null>(null);
+  const pendingInvites = invites.filter((i) => !i.used);
+  const teamRows = team.map((member) => ({ ...member, id: member.uid }));
 
   if (!perms.canManageTeam) {
     return (
@@ -81,28 +83,43 @@ export default function TeamPage() {
           </Card>
 
           {/* Pending invites */}
-          {invites.filter((i) => !i.used).length > 0 && (
+          {pendingInvites.length > 0 && (
             <>
-              <Text style={styles.section}>Pending Invites ({invites.filter((i) => !i.used).length})</Text>
-              <Card style={{ marginBottom: 16 }}>
-                {invites.filter((i) => !i.used).map((inv, idx, arr) => (
-                  <View key={inv.id} style={[styles.row, { borderBottomWidth: idx < arr.length - 1 ? 1 : 0, borderBottomColor: theme.colors.border }]}>
-                    <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: theme.colors.primaryLight, alignItems: 'center', justifyContent: 'center' }}>
-                      <MaterialIcons name="vpn-key" size={20} color={theme.colors.primary} />
-                    </View>
-                    <View style={{ flex: 1, marginLeft: 12 }}>
-                      <Text style={{ fontSize: 15, fontWeight: '800', color: theme.colors.text, letterSpacing: 2 }}>{inv.code}</Text>
-                      <Text style={{ fontSize: 11, color: theme.colors.textSecondary, marginTop: 2 }}>Role: {ROLE_LABELS[inv.role]}</Text>
-                    </View>
-                    <TouchableOpacity onPress={async () => { await Clipboard.setStringAsync(inv.code); Alert.alert('Copied', 'Invite code copied'); }} style={{ padding: 6 }}>
-                      <MaterialIcons name="content-copy" size={20} color={theme.colors.primary} />
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => Alert.alert('Delete Invite?', 'This code will no longer be valid', [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: () => deleteInvite(inv.id) }])} style={{ padding: 6 }}>
-                      <MaterialIcons name="delete-outline" size={20} color={theme.colors.error} />
-                    </TouchableOpacity>
-                  </View>
-                ))}
-              </Card>
+              <Text style={styles.section}>Pending Invites ({pendingInvites.length})</Text>
+              <DataTable<(typeof pendingInvites)[number]>
+                rows={pendingInvites}
+                exportFileName="pending-invites"
+                columns={[
+                  {
+                    key: 'code',
+                    title: 'Invite Code',
+                    sortValue: (row) => row.code,
+                    render: (row) => <Text style={{ fontSize: 13, fontWeight: '800', color: theme.colors.text, letterSpacing: 1.4 }}>{row.code}</Text>,
+                  },
+                  {
+                    key: 'role',
+                    title: 'Role',
+                    sortValue: (row) => row.role,
+                    width: 160,
+                    render: (row) => <Badge label={ROLE_LABELS[row.role].toUpperCase()} tone="primary" />,
+                  },
+                  {
+                    key: 'actions',
+                    title: 'Actions',
+                    width: 140,
+                    render: (row) => (
+                      <View style={{ flexDirection: 'row', gap: 10 }}>
+                        <TouchableOpacity onPress={async () => { await Clipboard.setStringAsync(row.code); Alert.alert('Copied', 'Invite code copied'); }}>
+                          <MaterialIcons name="content-copy" size={18} color={theme.colors.primary} />
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => Alert.alert('Delete Invite?', 'This code will no longer be valid', [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: () => deleteInvite(row.id) }])}>
+                          <MaterialIcons name="delete-outline" size={18} color={theme.colors.error} />
+                        </TouchableOpacity>
+                      </View>
+                    ),
+                  },
+                ]}
+              />
             </>
           )}
 
@@ -110,63 +127,73 @@ export default function TeamPage() {
           <Text style={styles.section}>Team Members ({team.length})</Text>
           {team.length === 0 ? (
             <EmptyState icon="people" title="No team members" subtitle="Generate an invite code above to add users" />
-          ) : team.map((m) => {
-            const isMe = m.uid === profile?.uid;
-            return (
-              <Card key={m.uid} style={{ marginBottom: 8 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: theme.colors.primary, alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 18 }}>{(m.displayName || m.email || 'U').charAt(0).toUpperCase()}</Text>
-                  </View>
-                  <View style={{ flex: 1, marginLeft: 12 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Text style={{ fontSize: 15, fontWeight: '700', color: theme.colors.text }}>{m.displayName || 'User'}</Text>
-                      {isMe && <Badge label="YOU" tone="success" />}
+          ) : (
+            <DataTable<(typeof teamRows)[number]>
+              rows={teamRows}
+              exportFileName="team-members"
+              columns={[
+                {
+                  key: 'name',
+                  title: 'User',
+                  sortValue: (row) => row.displayName || row.email,
+                  render: (row) => (
+                    <View>
+                      <Text style={{ fontSize: 13, fontWeight: '700', color: theme.colors.text }}>{row.displayName || 'User'}</Text>
+                      <Text style={{ fontSize: 11, color: theme.colors.textSecondary, marginTop: 2 }}>{row.email}</Text>
                     </View>
-                    <Text style={{ fontSize: 12, color: theme.colors.textSecondary, marginTop: 2 }}>{m.email}</Text>
-                    <View style={{ marginTop: 6 }}><Badge label={ROLE_LABELS[m.role].toUpperCase()} tone={m.role === 'admin' ? 'primary' : m.role === 'manager' ? 'success' : 'default'} /></View>
-                  </View>
-                  {!isMe && (
-                    <View style={{ flexDirection: 'row', gap: 8 }}>
-                      <TouchableOpacity onPress={() => setChangeModal({ uid: m.uid, email: m.email, role: m.role })} style={{ padding: 6 }}>
-                        <MaterialIcons name="edit" size={20} color={theme.colors.primary} />
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={() => Alert.alert('Remove Member?', `${m.email} will lose access to ${company?.name}`, [
-                        { text: 'Cancel', style: 'cancel' },
-                        { text: 'Remove', style: 'destructive', onPress: () => removeMember(m.uid).catch((e) => Alert.alert('Error', e.message)) },
-                      ])} style={{ padding: 6 }}>
-                        <MaterialIcons name="person-remove" size={20} color={theme.colors.error} />
-                      </TouchableOpacity>
-                    </View>
-                  )}
-                </View>
-              </Card>
-            );
-          })}
+                  ),
+                },
+                {
+                  key: 'role',
+                  title: 'Role',
+                  sortValue: (row) => row.role,
+                  width: 140,
+                  render: (row) => <Badge label={ROLE_LABELS[row.role].toUpperCase()} tone={row.role === 'admin' ? 'primary' : row.role === 'manager' ? 'success' : 'default'} />,
+                },
+                {
+                  key: 'actions',
+                  title: 'Actions',
+                  width: 140,
+                  render: (row) => {
+                    const isMe = row.uid === profile?.uid;
+                    if (isMe) return <Badge label="YOU" tone="success" />;
+                    return (
+                      <View style={{ flexDirection: 'row', gap: 10 }}>
+                        <TouchableOpacity onPress={() => setChangeModal({ uid: row.uid, email: row.email, role: row.role })}><MaterialIcons name="edit" size={18} color={theme.colors.primary} /></TouchableOpacity>
+                        <TouchableOpacity onPress={() => Alert.alert('Remove Member?', `${row.email} will lose access to ${company?.name}`, [
+                          { text: 'Cancel', style: 'cancel' },
+                          { text: 'Remove', style: 'destructive', onPress: () => removeMember(row.uid).catch((e) => Alert.alert('Error', e.message)) },
+                        ])}><MaterialIcons name="person-remove" size={18} color={theme.colors.error} /></TouchableOpacity>
+                      </View>
+                    );
+                  },
+                },
+              ]}
+            />
+          )}
         </ScrollView>
 
-        <Modal visible={!!changeModal} transparent animationType="fade" onRequestClose={() => setChangeModal(null)}>
-          <View style={{ flex: 1, backgroundColor: theme.colors.overlay, justifyContent: 'center', padding: 24 }}>
-            <Card style={{ padding: 20 }}>
-              <Text style={{ fontSize: 18, fontWeight: '800', color: theme.colors.text, marginBottom: 4 }}>Change Role</Text>
-              <Text style={{ fontSize: 13, color: theme.colors.textSecondary, marginBottom: 16 }}>{changeModal?.email}</Text>
-              {roleOptions.map((r) => (
-                <TouchableOpacity key={r} onPress={async () => {
-                  try {
-                    if (changeModal) await changeMemberRole(changeModal.uid, r);
-                    setChangeModal(null);
-                  } catch (e: any) { Alert.alert('Error', e?.message); }
-                }} style={[styles.roleOption, { borderColor: changeModal?.role === r ? theme.colors.primary : theme.colors.border, backgroundColor: changeModal?.role === r ? theme.colors.primaryLight : 'transparent' }]}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 14, fontWeight: '700', color: theme.colors.text }}>{ROLE_LABELS[r]}</Text>
-                    <Text style={{ fontSize: 12, color: theme.colors.textSecondary, marginTop: 2 }}>{ROLE_DESCRIPTIONS[r]}</Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
-              <Button title="Cancel" variant="secondary" fullWidth onPress={() => setChangeModal(null)} style={{ marginTop: 8 }} />
-            </Card>
-          </View>
-        </Modal>
+        <AppModal
+          visible={!!changeModal}
+          title="Change Role"
+          subtitle={changeModal?.email}
+          onClose={() => setChangeModal(null)}
+          footer={<Button title="Cancel" variant="secondary" fullWidth onPress={() => setChangeModal(null)} />}
+        >
+          {roleOptions.map((r) => (
+            <TouchableOpacity key={r} onPress={async () => {
+              try {
+                if (changeModal) await changeMemberRole(changeModal.uid, r);
+                setChangeModal(null);
+              } catch (e: any) { Alert.alert('Error', e?.message); }
+            }} style={[styles.roleOption, { borderColor: changeModal?.role === r ? theme.colors.primary : theme.colors.border, backgroundColor: changeModal?.role === r ? theme.colors.primaryLight : 'transparent' }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: theme.colors.text }}>{ROLE_LABELS[r]}</Text>
+                <Text style={{ fontSize: 12, color: theme.colors.textSecondary, marginTop: 2 }}>{ROLE_DESCRIPTIONS[r]}</Text>
+              </View>
+            </TouchableOpacity>
+          ))}
+        </AppModal>
       </SafeAreaView>
     </Screen>
   );

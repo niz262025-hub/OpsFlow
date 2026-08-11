@@ -11,7 +11,7 @@ import uuid
 BASE_URL = os.environ.get("EXPO_PUBLIC_BACKEND_URL", "https://sales-dashboard-685.preview.emergentagent.com").rstrip("/")
 API = f"{BASE_URL}/api"
 
-ADMIN_EMAIL = "admin@bizflow.com"
+ADMIN_EMAIL = f"admin+{os.environ.get('PYTEST_XDIST_WORKER', 'gw0')}@bizflow.com"
 ADMIN_PASSWORD = "admin123"
 
 
