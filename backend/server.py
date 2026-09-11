@@ -8,23 +8,35 @@ from datetime import datetime, timedelta
 import jwt
 import os
 import logging
+import secrets
+import hashlib
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 from bson import ObjectId
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 # MongoDB connection
-mongo_url = os.environ['MONGO_URL']
+mongo_url = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
 client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+db = client[os.environ.get('DB_NAME', 'opsflow_dev')]
 
 # Security
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "bizflow-secret-key-change-in-production")
+
+
+def _require_env(name: str) -> str:
+    value = os.getenv(name)
+    if not value:
+        raise RuntimeError(f"Missing required environment variable: {name}")
+    return value
+
+
+SECRET_KEY_SOURCE = os.getenv("JWT_SECRET_KEY") or os.getenv("OPSFLOW_JWT_SECRET") or secrets.token_urlsafe(48)
+SECRET_KEY = hashlib.sha256(SECRET_KEY_SOURCE.encode("utf-8")).hexdigest()
 ALGORITHM = "HS256"
 TRIAL_DAYS = 14
 VALID_PAYMENT_METHODS = {"Cash", "QR", "Bank Transfer", "Transfer"}
@@ -70,10 +82,11 @@ def _derive_company_status(company: Dict[str, Any]) -> str:
 
 
 def _get_admin_credentials() -> Dict[str, str]:
-    return {
-        "email": os.getenv("SUPER_ADMIN_EMAIL", "superadmin@bizflow.my"),
-        "password": os.getenv("SUPER_ADMIN_PASSWORD", "BizFlow2026!"),
-    }
+    email = os.getenv("SUPER_ADMIN_EMAIL")
+    password = os.getenv("SUPER_ADMIN_PASSWORD")
+    if not email or not password:
+        raise RuntimeError("SUPER_ADMIN_EMAIL and SUPER_ADMIN_PASSWORD must be configured in the environment.")
+    return {"email": email, "password": password}
 
 
 def _company_plan_price(plan: Optional[str]) -> float:
@@ -123,8 +136,14 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def create_access_token(data: dict):
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(days=30)
-    to_encode.update({"exp": expire})
+    if "exp" in to_encode:
+        exp_value = to_encode["exp"]
+        if isinstance(exp_value, datetime):
+            to_encode["exp"] = exp_value
+        else:
+            to_encode["exp"] = int(exp_value)
+    else:
+        to_encode["exp"] = datetime.utcnow() + timedelta(days=30)
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
@@ -194,6 +213,43 @@ async def get_current_admin(credentials: HTTPAuthorizationCredentials = Depends(
         raise HTTPException(status_code=401, detail="Token expired")
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid authentication")
+
+
+async def get_business_membership_for_user(user_id: str, business_id: str, required_roles: Optional[Set[str]] = None) -> Dict[str, Any]:
+    if not business_id:
+        raise HTTPException(status_code=400, detail="Business ID is required")
+    try:
+        business_oid = ObjectId(business_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid business ID")
+
+    business = await db.companies.find_one({"_id": business_oid})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    membership = await db.business_members.find_one({
+        "user_id": str(user_id),
+        "business_id": str(business_oid),
+        "status": "active",
+    })
+    if not membership:
+        raise HTTPException(status_code=403, detail="Business membership required")
+
+    if required_roles and membership.get("role") not in required_roles:
+        raise HTTPException(status_code=403, detail="Insufficient role permissions for this business")
+
+    return {"business": business, "membership": membership}
+
+
+async def require_business_access(
+    business_id: str,
+    current_user: dict,
+    required_roles: Optional[Set[str]] = None,
+):
+    user_id = str(current_user.get("_id") or current_user.get("id") or current_user.get("user_id"))
+    if not user_id:
+        raise HTTPException(status_code=401, detail="User identity is required")
+    return await get_business_membership_for_user(user_id, business_id, required_roles)
 
 # Models
 class UserRegister(BaseModel):
@@ -391,6 +447,36 @@ async def get_me(current_user: dict = Depends(get_current_user)):
         "currency": current_user.get("currency", "MYR"),
         "company_logo": current_user.get("company_logo")
     }
+
+
+@api_router.post("/auth/logout")
+async def logout():
+    return {"status": "success", "message": "Logged out successfully"}
+
+
+@api_router.get("/businesses/{business_id}/summary")
+async def get_business_summary(business_id: str, current_user: dict = Depends(get_current_user)):
+    access = await require_business_access(business_id, current_user, required_roles={"owner", "admin", "manager", "member"})
+    business = access["business"]
+    return {
+        "businessId": str(business["_id"]),
+        "companyName": business.get("companyName") or business.get("businessName") or "",
+        "email": business.get("email"),
+        "status": business.get("status"),
+        "plan": business.get("plan"),
+        "membershipRole": access["membership"].get("role"),
+    }
+
+
+@api_router.get("/businesses/{business_id}/owner-only")
+async def business_owner_only(business_id: str, current_user: dict = Depends(get_current_user)):
+    access = await require_business_access(business_id, current_user, required_roles={"owner", "admin"})
+    return {
+        "businessId": business_id,
+        "role": access["membership"].get("role"),
+        "message": "Owner/admin access granted",
+    }
+
 
 # Super Admin Routes
 @api_router.post("/admin/login")

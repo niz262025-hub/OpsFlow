@@ -90,10 +90,12 @@ def server_module(monkeypatch):
 
 def test_admin_login_and_dashboard_summary(server_module):
     client = TestClient(server_module.app)
+    admin_email = os.environ["SUPER_ADMIN_EMAIL"]
+    admin_password = os.environ["SUPER_ADMIN_PASSWORD"]
 
     login_resp = client.post(
         "/api/admin/login",
-        json={"email": "superadmin@bizflow.my", "password": "BizFlow2026!"},
+        json={"email": admin_email, "password": admin_password},
     )
 
     assert login_resp.status_code == 200, login_resp.text
@@ -117,7 +119,7 @@ def test_reset_password_and_impersonation(server_module):
 
     admin_login = client.post(
         "/api/admin/login",
-        json={"email": "superadmin@bizflow.my", "password": "BizFlow2026!"},
+        json={"email": os.environ["SUPER_ADMIN_EMAIL"], "password": os.environ["SUPER_ADMIN_PASSWORD"]},
     )
     token = admin_login.json()["access_token"]
 
