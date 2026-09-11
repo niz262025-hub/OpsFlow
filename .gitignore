@@ -58,6 +58,25 @@ chainlit.md
 .ipynb_checkpoints/
 .ac
 
+# Secrets and local environment files
+.env
+.env.*
+**/.env
+**/.env.*
+**/.playwright-auth.json
+**/playwright/.auth/
+**/playwright-auth.json
+**/auth/session/
+**/sessions/
+**/*.session
+**/*.session.json
+
+# Playwright generated artifacts
+**/test-results/
+**/playwright-report/
+**/blob-report/
+**/.playwright/
+
 # Deployment
 .vercel
 

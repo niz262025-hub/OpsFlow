@@ -32,16 +32,27 @@ yarn-error.*
 *.pem
 
 # local env files
+.env
+.env.*
 .env*.local
+**/.playwright-auth.json
+**/playwright/.auth/
+**/auth/session/
+**/sessions/
+**/*.session
+**/*.session.json
 
 # typescript
 *.tsbuildinfo
 
 app-example
 
-# Playwright
+# Playwright generated artifacts
 /test-results/
 /playwright-report/
 /blob-report/
 /playwright/.cache/
 /playwright/.auth/
+/test-results/**
+/playwright-report/**
+/blob-report/**
