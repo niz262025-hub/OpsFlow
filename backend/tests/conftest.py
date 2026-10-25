@@ -8,4 +8,5 @@ def test_environment():
     os.environ.setdefault("SUPER_ADMIN_EMAIL", "superadmin@opsflow.dev")
     os.environ.setdefault("SUPER_ADMIN_PASSWORD", "StrongPass!123")
     os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key")
+    os.environ["MYOPS_REQUIRED"] = "false"
     yield

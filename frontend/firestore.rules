@@ -2,24 +2,83 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function isSignedIn() { return request.auth != null; }
+    function hasMyopsAccess() {
+      let accessPath = /databases/$(database)/documents/myops_access_sessions/$(request.auth.uid);
+      return request.auth.token.myops_product == 'opsflow'
+        && request.auth.token.myops_session_id is string
+        && exists(accessPath)
+        && get(accessPath).data.myops_session_id == request.auth.token.myops_session_id
+        && get(accessPath).data.product == 'opsflow'
+        && get(accessPath).data.active == true
+        && get(accessPath).data.valid_until > request.time;
+    }
+    function isSignedIn() { return request.auth != null && hasMyopsAccess(); }
     function userDoc() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
     function myCompanyId() { return userDoc().companyId; }
     function myRole() { return userDoc().role; }
     function isAdmin() { return myRole() == 'admin'; }
     function isManager() { return myRole() in ['admin', 'manager']; }
+    function roleIsValid(role) { return role in ['admin', 'manager', 'cashier']; }
+
+    function validInviteJoin(uid) {
+      let inviteId = request.resource.data.joinInviteId;
+      let invitePath = /databases/$(database)/documents/invite_codes/$(inviteId);
+      return resource.data.companyId == null
+        && request.resource.data.companyId is string
+        && roleIsValid(request.resource.data.role)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['companyId', 'role', 'joinInviteId'])
+        && existsAfter(invitePath)
+        && getAfter(invitePath).data.used == true
+        && getAfter(invitePath).data.usedBy == uid
+        && getAfter(invitePath).data.companyId == request.resource.data.companyId
+        && getAfter(invitePath).data.role == request.resource.data.role;
+    }
+
+    function validCompanyClaim(uid) {
+      let companyId = request.resource.data.companyId;
+      let companyPath = /databases/$(database)/documents/companies/$(companyId);
+      return resource.data.companyId == null
+        && companyId is string
+        && request.resource.data.role == 'admin'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['companyId', 'role'])
+        && existsAfter(companyPath)
+        && getAfter(companyPath).data.ownerUid == uid;
+    }
+
+    // Only the trusted backend writes this short-lived session record. A regular
+    // Firebase password session is never sufficient to reach business data.
+    match /myops_access_sessions/{uid} {
+      allow read, write: if false;
+    }
 
     match /users/{uid} {
       allow read: if isSignedIn() && (request.auth.uid == uid || (resource.data.companyId != null && myCompanyId() == resource.data.companyId));
-      allow create: if isSignedIn() && request.auth.uid == uid;
-      allow update: if isSignedIn() && (request.auth.uid == uid || ((resource.data.companyId != null && myCompanyId() == resource.data.companyId) && isAdmin()));
-      allow delete: if isSignedIn() && isAdmin();
+      // User identities and company roles are provisioned by trusted services.
+      allow create: if false;
+      allow update: if isSignedIn() && (
+        (request.auth.uid == uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'phone', 'photoURL', 'updatedAt']))
+        || (request.auth.uid == uid && validInviteJoin(uid))
+        || (request.auth.uid == uid && validCompanyClaim(uid))
+        || (
+          resource.data.companyId != null
+          && myCompanyId() == resource.data.companyId
+          && isAdmin()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role', 'companyId'])
+          && (request.resource.data.role == resource.data.role || roleIsValid(request.resource.data.role))
+          && (request.resource.data.companyId == resource.data.companyId || request.resource.data.companyId == null)
+        )
+      );
+      allow delete: if false;
     }
 
     match /companies/{companyId} {
       allow read: if isSignedIn() && ((resource.data.ownerUid == request.auth.uid) || (resource.data.ownerUid != null && myCompanyId() == companyId));
       allow create: if isSignedIn() && request.resource.data.ownerUid == request.auth.uid;
-      allow update, delete: if isSignedIn() && ((resource.data.ownerUid == request.auth.uid) || (myCompanyId() == companyId && isAdmin()));
+      allow update: if isSignedIn() && (
+        (resource.data.ownerUid == request.auth.uid && request.resource.data.ownerUid == request.auth.uid)
+        || (myCompanyId() == companyId && isAdmin() && request.resource.data.ownerUid == resource.data.ownerUid)
+      );
+      allow delete: if isSignedIn() && ((resource.data.ownerUid == request.auth.uid) || (myCompanyId() == companyId && isAdmin()));
     }
 
     match /invite_codes/{inviteId} {
@@ -36,11 +95,14 @@ service cloud.firestore {
 
       // A signed-in user may claim an unused invite code exactly once.
       allow update: if isSignedIn() && (
-        (myCompanyId() == resource.data.companyId && isManager()) ||
+        (myCompanyId() == resource.data.companyId && isManager()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used', 'usedBy', 'usedAt', 'role'])
+          && (request.resource.data.role == resource.data.role || (isAdmin() && roleIsValid(request.resource.data.role)))) ||
         (
           resource.data.used == false
           && request.resource.data.used == true
           && request.resource.data.usedBy == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used', 'usedBy', 'usedAt'])
           && request.resource.data.companyId == resource.data.companyId
           && request.resource.data.code == resource.data.code
           && request.resource.data.role == resource.data.role

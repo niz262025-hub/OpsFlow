@@ -1,20 +1,23 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { Linking } from 'react-native';
 import {
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  sendPasswordResetEmail,
+  signInWithCustomToken,
   signOut,
   onAuthStateChanged,
-  updateProfile,
   User as FirebaseUser,
-  browserLocalPersistence,
-  inMemoryPersistence,
-  setPersistence,
 } from 'firebase/auth';
-import { doc, getDoc, getDocs, setDoc, serverTimestamp, collection, query, where, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, getDocs, serverTimestamp, collection, query, where, writeBatch } from 'firebase/firestore';
 import { getFirebaseAuth, getFirebaseDb, isFirebaseConfigured } from '@/src/firebase/config';
 import { storage } from '@/src/utils/storage';
-import { buildTrialCompanyData } from '@/src/utils/trialFlow';
+import {
+  clearMyopsLaunchTicketFromUrl,
+  clearStoredMyopsAccessToken,
+  endMyopsSession,
+  extractMyopsLaunchTicket,
+  OPSFLOW_API_TOKEN_KEY,
+  redeemMyopsLaunchTicket,
+  refreshMyopsSession,
+} from '@/src/services/myopsAppAccess';
 
 declare global {
   interface Window {
@@ -36,8 +39,6 @@ export interface UserProfile {
   companyId?: string | null;
   role: Role;
   status?: string;
-  trialDays?: number;
-  trialEndsAt?: any;
   createdAt?: any;
 }
 
@@ -65,40 +66,6 @@ interface AuthCtx {
 
 const AuthContext = createContext<AuthCtx | undefined>(undefined);
 
-function normalizeAuthError(error: unknown, fallbackMessage: string) {
-  const err = error as Error & { code?: string };
-  const code = err?.code || '';
-  let message = fallbackMessage;
-
-  switch (code) {
-    case 'auth/invalid-credential':
-    case 'auth/wrong-password':
-    case 'auth/user-not-found':
-      message = 'Invalid email or password.';
-      break;
-    case 'auth/user-disabled':
-      message = 'This account has been disabled.';
-      break;
-    case 'auth/network-request-failed':
-    case 'auth/network-error':
-      message = 'Network error. Please check your connection and try again.';
-      break;
-    case 'auth/configuration-not-found':
-      message = 'Firebase is not configured for this deployment.';
-      break;
-    case 'auth/too-many-requests':
-      message = 'Too many attempts. Please try again later.';
-      break;
-    default:
-      if (err?.message) message = err.message;
-      break;
-  }
-
-  const normalized = new Error(message) as Error & { code?: string };
-  normalized.code = code || 'auth/unknown-error';
-  return normalized;
-}
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -115,6 +82,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       storage.secureRemove('auth:token'),
       storage.secureRemove('auth:company'),
       storage.secureRemove('auth:workspace'),
+      clearStoredMyopsAccessToken(),
     ]);
   }, []);
 
@@ -135,32 +103,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           companyName: data.companyName || null,
           companyId: resolvedCompanyId,
           role: (data.role as Role) || 'admin',
-          status: data.status || 'trial',
-          trialDays: data.trialDays || 7,
-          trialEndsAt: data.trialEndsAt,
+          status: 'active',
           createdAt: data.createdAt,
         });
         return;
       }
 
-      await setDoc(profileRef, {
-        email: u.email || '',
-        displayName: u.displayName || null,
-        companyName: null,
-        companyId: null,
-        role: 'admin',
-        createdAt: serverTimestamp(),
-      }, { merge: true });
-      setProfile({
-        uid: u.uid,
-        email: u.email || '',
-        displayName: u.displayName || undefined,
-        companyName: null,
-        companyId: null,
-        role: 'admin',
-        status: 'trial',
-        trialDays: 7,
-      });
+      setProfile(null);
     } catch {
       setProfile(null);
     }
@@ -186,171 +135,125 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     let alive = true;
+    let unsubscribeAuth: (() => void) | undefined;
+    let launchInFlight: string | null = null;
     const auth = getFirebaseAuth();
-    const unsub = onAuthStateChanged(auth, async (u) => {
-      if (!alive) return;
-      console.log('[bizflow-register] auth state received', u ? { uid: u.uid } : { uid: null });
-      setUser(u);
-      if (u) {
-        await loadProfile(u);
-      } else {
+
+    const openMyopsTicket = async (ticket: string) => {
+      if (!alive || launchInFlight === ticket) return;
+      launchInFlight = ticket;
+      setLoading(true);
+      try {
+        await clearMyopsLaunchTicketFromUrl();
+        const result = await redeemMyopsLaunchTicket(ticket);
+        await storage.secureSet(OPSFLOW_API_TOKEN_KEY, result.accessToken);
+        await signInWithCustomToken(auth, result.firebaseCustomToken);
+      } catch (error) {
+        await clearStoredMyopsAccessToken();
+        console.warn('MYOPS could not open OpsFlow:', error);
+        setUser(null);
         setProfile(null);
-        await clearStoredAuthState();
+        setLoading(false);
+      } finally {
+        launchInFlight = null;
       }
-      if (alive) setLoading(false);
-    });
+    };
+    const handleLaunchUrl = (url: string) => {
+      const ticket = extractMyopsLaunchTicket(url);
+      if (ticket) void openMyopsTicket(ticket);
+    };
+
+    const initializeAuth = async () => {
+      const initialUrl = await Linking.getInitialURL().catch(() => null);
+      const initialTicket = initialUrl ? extractMyopsLaunchTicket(initialUrl) : null;
+      if (initialTicket) await openMyopsTicket(initialTicket);
+      if (!alive) return;
+
+      unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+        if (!alive) return;
+        if (!firebaseUser) {
+          setUser(null);
+          setProfile(null);
+          await clearStoredAuthState();
+          if (alive) setLoading(false);
+          return;
+        }
+
+        const apiToken = await storage.secureGet<string | null>(OPSFLOW_API_TOKEN_KEY, null);
+        const entitled = apiToken ? await refreshMyopsSession(apiToken, false) : false;
+        if (!entitled) {
+          await clearStoredMyopsAccessToken();
+          await signOut(auth);
+          setUser(null);
+          setProfile(null);
+          if (alive) setLoading(false);
+          return;
+        }
+        setUser(firebaseUser);
+        await loadProfile(firebaseUser);
+        if (alive) setLoading(false);
+      });
+    };
+    void initializeAuth();
+
+    const linkSubscription = Linking.addEventListener('url', ({ url }) => handleLaunchUrl(url));
+    const handleHashChange = () => {
+      if (typeof window !== 'undefined') handleLaunchUrl(window.location.href);
+    };
+    if (typeof window !== 'undefined') window.addEventListener('hashchange', handleHashChange);
     return () => {
       alive = false;
-      unsub();
+      unsubscribeAuth?.();
+      linkSubscription.remove();
+      if (typeof window !== 'undefined') window.removeEventListener('hashchange', handleHashChange);
     };
   }, [clearStoredAuthState, firebaseReady, loadProfile]);
 
-  const register = useCallback(async (email: string, password: string, displayName: string, companyName?: string, onStatusChange?: RegisterStatusHandler) => {
-    if (!firebaseReady) {
-      const error = new Error('Authentication is unavailable because Firebase is not configured') as Error & { code?: string };
-      error.code = 'auth/configuration-not-found';
-      throw error;
-    }
-
+  useEffect(() => {
+    if (!user || !firebaseReady || typeof document === 'undefined') return;
     const auth = getFirebaseAuth();
-    const db = getFirebaseDb();
-    const cleanEmail = email.trim();
-    const cleanDisplayName = displayName.trim();
-    const cleanCompanyName = companyName?.trim() || 'My Business';
-    setLoading(true);
-    try {
-      onStatusChange?.('Creating your Firebase account…');
-      await setPersistence(auth, browserLocalPersistence);
-      const cred = await createUserWithEmailAndPassword(auth, cleanEmail, password);
-      console.log('[bizflow-register] auth created', { uid: cred.user.uid, email: cleanEmail });
-      onStatusChange?.('Firebase account ready. Finishing onboarding…');
+    let lastActivityAt = Date.now() - 60_000;
+    const markActivity = () => { lastActivityAt = Date.now(); };
+    const events = ['pointerdown', 'keydown', 'touchstart', 'scroll'];
+    events.forEach((eventName) => document.addEventListener(eventName, markActivity, { passive: true }));
+    const timer = setInterval(() => {
+      void (async () => {
+        const token = await storage.secureGet<string | null>(OPSFLOW_API_TOKEN_KEY, null);
+        const active = token ? await refreshMyopsSession(token, Date.now() - lastActivityAt < 10_000) : false;
+        if (!active) {
+          await clearStoredMyopsAccessToken();
+          await signOut(auth);
+        }
+      })();
+    }, 10_000);
+    return () => {
+      clearInterval(timer);
+      events.forEach((eventName) => document.removeEventListener(eventName, markActivity));
+    };
+  }, [firebaseReady, user?.uid]);
 
-      if (cleanDisplayName) await updateProfile(cred.user, { displayName: cleanDisplayName });
+  const register = useCallback(async (_email: string, _password: string, _displayName: string, _companyName?: string, onStatusChange?: RegisterStatusHandler) => {
+    onStatusChange?.('Continue registration through MYOPS.');
+    await Linking.openURL('https://www.myops.com.my/');
+    throw new Error('Create your account and choose OpsFlow access through MYOPS.');
+  }, []);
 
-      const trialCompany = buildTrialCompanyData(cleanCompanyName, cleanDisplayName, cleanEmail);
-      const companyRef = doc(collection(db, 'companies'));
-      const companyData = {
-        name: cleanCompanyName,
-        companyName: cleanCompanyName,
-        businessName: cleanCompanyName,
-        ownerName: cleanDisplayName,
-        ownerEmail: cleanEmail,
-        email: cleanEmail,
-        ownerUid: cred.user.uid,
-        status: 'Trial',
-        plan: 'basic',
-        trialDays: 7,
-        trialStartDate: trialCompany.trialStartsAt,
-        trialStartsAt: trialCompany.trialStartsAt,
-        trialEnd: trialCompany.trialEndsAt,
-        trialEndsAt: trialCompany.trialEndsAt,
-        subscriptionEnd: null,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      };
-
-      console.log('[bizflow-register] company write started', { companyName: cleanCompanyName, ownerUid: cred.user.uid });
-      onStatusChange?.('Creating your company workspace…');
-      await setDoc(companyRef, companyData);
-      console.log('[bizflow-register] company write completed', { companyId: companyRef.id });
-
-      const companyId = companyRef.id;
-      console.log('[bizflow-register] profile write completed', { uid: cred.user.uid, companyId });
-      await setDoc(doc(db, 'users', cred.user.uid), {
-        email: cleanEmail,
-        displayName: cleanDisplayName,
-        companyId,
-        companyName: cleanCompanyName,
-        role: 'admin',
-        plan: 'basic',
-        status: 'trial',
-        trialDays: 7,
-        trialStartsAt: trialCompany.trialStartsAt,
-        trialEndsAt: trialCompany.trialEndsAt,
-        createdAt: serverTimestamp(),
-      }, { merge: true });
-      console.log('[bizflow-register] trial write completed', { companyId, trialDays: 7, trialEndsAt: trialCompany.trialEndsAt.toISOString() });
-
-      await auth.authStateReady();
-      const readyUser = auth.currentUser;
-      if (!readyUser || readyUser.uid !== cred.user.uid) {
-        throw new Error('Firebase did not confirm the new session.');
-      }
-
-      const sessionPayload = { uid: readyUser.uid, email: readyUser.email ?? '', companyId, companyName: cleanCompanyName };
-      await storage.setItem('auth:user', JSON.stringify(sessionPayload));
-      await storage.setItem('auth:company', companyId);
-      await storage.secureSet('auth:session', JSON.stringify(sessionPayload));
-      await loadProfile(readyUser);
-      setUser(readyUser);
-      onStatusChange?.('Redirecting to your dashboard…');
-      console.log('[bizflow-register] redirect started', { path: '/app' });
-    } catch (error) {
-      console.error('[bizflow-register] onboarding failed', error);
-      throw normalizeAuthError(error, 'Unable to create your account. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  }, [firebaseReady, loadProfile]);
-
-  const login = useCallback(async (email: string, password: string, companyName?: string, rememberMe?: boolean) => {
-    const cleanEmail = email.trim();
-    const cleanCompany = companyName?.trim() || '';
-
-    if (!cleanEmail || !password) {
-      throw normalizeAuthError({ code: 'auth/invalid-credential' }, 'Email and password are required.');
-    }
-
-    if (!firebaseReady) {
-      throw normalizeAuthError({ code: 'auth/configuration-not-found' }, 'Authentication is unavailable because Firebase is not configured.');
-    }
-
-    const auth = getFirebaseAuth();
-    setLoading(true);
-    try {
-      await setPersistence(auth, rememberMe ? browserLocalPersistence : inMemoryPersistence);
-      const cred = await signInWithEmailAndPassword(auth, cleanEmail, password);
-      if (cred.user) {
-        const db = getFirebaseDb();
-        const profileRef = doc(db, 'users', cred.user.uid);
-        const profileSnap = await getDoc(profileRef);
-        const nextRole = (profileSnap.exists() ? profileSnap.data().role : 'admin') as Role;
-
-        await setDoc(profileRef, {
-          email: cleanEmail,
-          displayName: cred.user.displayName || null,
-          companyName: cleanCompany || profileSnap.data()?.companyName || null,
-          companyId: profileSnap.exists() ? profileSnap.data().companyId ?? null : null,
-          role: nextRole,
-          updatedAt: serverTimestamp(),
-        }, { merge: true });
-
-        setUser(cred.user);
-        await storage.setItem('auth:user', JSON.stringify({ uid: cred.user.uid, email: cred.user.email ?? '', companyName: cleanCompany || '' }));
-        await storage.secureSet('auth:session', JSON.stringify({ uid: cred.user.uid, email: cred.user.email ?? '', companyName: cleanCompany || '' }));
-        await loadProfile(cred.user);
-      }
-    } catch (error) {
-      throw normalizeAuthError(error, 'Unable to sign in. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  }, [firebaseReady, loadProfile]);
+  const login = useCallback(async (_email: string, _password: string, _companyName?: string, _rememberMe?: boolean) => {
+    await Linking.openURL('https://www.myops.com.my/');
+    throw new Error('Sign in through MYOPS to open OpsFlow.');
+  }, []);
 
   const forgotPassword = useCallback(async (email: string) => {
-    if (!firebaseReady) {
-      const error = new Error('Authentication is unavailable because Firebase is not configured') as Error & { code?: string };
-      error.code = 'auth/configuration-not-found';
-      throw error;
-    }
-    const auth = getFirebaseAuth();
-    await sendPasswordResetEmail(auth, email.trim());
-  }, [firebaseReady]);
+    void email;
+    await Linking.openURL('https://www.myops.com.my/');
+  }, []);
 
   const logout = useCallback(async () => {
     const auth = getFirebaseAuth();
     try {
       if (firebaseReady) {
+        const token = await storage.secureGet<string | null>(OPSFLOW_API_TOKEN_KEY, null);
+        if (token) await endMyopsSession(token);
         await signOut(auth);
       }
     } finally {
@@ -382,8 +285,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const inv = snap.docs[0];
     const data = inv.data() as InviteCodeDoc;
     if (data.used) throw new Error('This code has already been used');
-    await setDoc(doc(db, 'users', user.uid), { companyId: data.companyId, role: data.role }, { merge: true });
-    await updateDoc(doc(db, 'invite_codes', inv.id), { used: true, usedBy: user.uid, usedAt: serverTimestamp() });
+    const batch = writeBatch(db);
+    batch.update(doc(db, 'invite_codes', inv.id), { used: true, usedBy: user.uid, usedAt: serverTimestamp() });
+    batch.set(doc(db, 'users', user.uid), {
+      companyId: data.companyId,
+      role: data.role,
+      joinInviteId: inv.id,
+    }, { merge: true });
+    await batch.commit();
     await loadProfile(user);
     return { companyId: data.companyId, role: data.role };
   }, [firebaseReady, loadProfile, user]);

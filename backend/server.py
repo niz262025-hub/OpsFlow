@@ -1,19 +1,27 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, status
+from fastapi.concurrency import run_in_threadpool
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from passlib.context import CryptContext
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import jwt
 import os
 import logging
+import json
 import secrets
 import hashlib
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr
 from typing import Any, Dict, List, Optional, Set
 from bson import ObjectId
+from myops_app_access import (
+    MyopsAccessError,
+    call_myops,
+    is_launch_ticket,
+    validate_redeem_response,
+)
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -40,6 +48,46 @@ SECRET_KEY = hashlib.sha256(SECRET_KEY_SOURCE.encode("utf-8")).hexdigest()
 ALGORITHM = "HS256"
 TRIAL_DAYS = 14
 VALID_PAYMENT_METHODS = {"Cash", "QR", "Bank Transfer", "Transfer"}
+MYOPS_SESSION_SECONDS = 20
+
+
+def myops_required() -> bool:
+    return os.getenv("MYOPS_REQUIRED", "true").strip().lower() not in {"0", "false", "no"}
+
+
+def _firebase_admin_services():
+    """Return server-only Firebase Admin Auth and Firestore clients."""
+    try:
+        import firebase_admin
+        from firebase_admin import auth as admin_auth, credentials, firestore
+    except ImportError as error:
+        raise RuntimeError("Firebase Admin SDK is not installed") from error
+
+    service_account_json = os.getenv("OPSFLOW_FIREBASE_SERVICE_ACCOUNT_JSON", "")
+    if not service_account_json:
+        raise RuntimeError("Firebase Admin service account is not configured")
+    try:
+        service_account = json.loads(service_account_json)
+    except ValueError as error:
+        raise RuntimeError("Firebase Admin service account is invalid") from error
+    expected_project = os.getenv("OPSFLOW_FIREBASE_PROJECT_ID", "").strip()
+    if not expected_project:
+        raise RuntimeError("Firebase project ID is not configured")
+    if service_account.get("project_id") != expected_project:
+        raise RuntimeError("Firebase Admin project does not match OpsFlow")
+
+    try:
+        app_admin = firebase_admin.get_app("opsflow")
+    except ValueError:
+        app_admin = firebase_admin.initialize_app(
+            credentials.Certificate(service_account),
+            name="opsflow",
+        )
+    return admin_auth, firestore.client(app=app_admin)
+
+
+def _valid_until() -> datetime:
+    return datetime.now(timezone.utc) + timedelta(seconds=MYOPS_SESSION_SECONDS)
 
 # Create the main app
 app = FastAPI()
@@ -135,6 +183,8 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 def create_access_token(data: dict):
+    if myops_required() and not (os.getenv("JWT_SECRET_KEY") or os.getenv("OPSFLOW_JWT_SECRET")):
+        raise RuntimeError("A stable OpsFlow JWT secret is required when MYOPS access is enabled")
     to_encode = data.copy()
     if "exp" in to_encode:
         exp_value = to_encode["exp"]
@@ -166,6 +216,22 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         user_id = payload.get("user_id")
         if user_id is None:
             raise HTTPException(status_code=401, detail="Invalid token")
+
+        active_session = None
+        if myops_required():
+            session_id = payload.get("myops_session_id")
+            firebase_uid = payload.get("firebase_uid")
+            if not isinstance(session_id, str) or not isinstance(firebase_uid, str):
+                raise HTTPException(status_code=401, detail="MYOPS session required")
+            active_session = await db.myops_app_sessions.find_one({
+                "myops_session_id": session_id,
+                "firebase_uid": firebase_uid,
+                "mongo_user_id": str(user_id),
+                "revoked_at": None,
+                "valid_until": {"$gt": _utc_now()},
+            })
+            if not active_session:
+                raise HTTPException(status_code=403, detail="MYOPS access is not active")
         
         user = await db.users.find_one({"_id": ObjectId(user_id)})
         if not user:
@@ -175,14 +241,14 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         if user.get("email"):
             company = await db.companies.find_one({"email": user["email"]})
 
-        if company:
+        if company and (not myops_required() or _derive_company_status(company) == "Suspended"):
             status = _derive_company_status(company)
-            if status in {"Expired", "Suspended"}:
+            if status == "Suspended" or (not myops_required() and status == "Expired"):
                 raise HTTPException(status_code=403, detail="Account is suspended or expired")
         
         # Check trial expiration
         trial_start = user.get("trial_start_date")
-        if trial_start:
+        if trial_start and not myops_required():
             days_elapsed = (datetime.utcnow() - trial_start).days
             if days_elapsed > TRIAL_DAYS:
                 user["trial_expired"] = True
@@ -191,9 +257,13 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
                     {"$set": {"trial_expired": True}}
                 )
         
+        if active_session:
+            user["_myops_session"] = active_session
         return user
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=401, detail="Invalid authentication")
 
@@ -261,6 +331,12 @@ class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
+class MyopsTicketRequest(BaseModel):
+    ticket: str
+
+class MyopsRefreshRequest(BaseModel):
+    activity: bool = False
+
 class CategoryCreate(BaseModel):
     name: str
 
@@ -318,6 +394,8 @@ class PaymentSuccessCallback(BaseModel):
 # Auth Routes
 @api_router.post("/auth/register")
 async def register(user_data: UserRegister):
+    if myops_required():
+        raise HTTPException(status_code=410, detail="Create your account through MYOPS")
     # Check if user exists
     existing_user = await db.users.find_one({"email": user_data.email})
     if existing_user:
@@ -380,6 +458,8 @@ async def register(user_data: UserRegister):
 
 @api_router.post("/auth/login")
 async def login(credentials: UserLogin):
+    if myops_required():
+        raise HTTPException(status_code=410, detail="Sign in through MYOPS")
     user = await db.users.find_one({"email": credentials.email})
     if not user or not verify_password(credentials.password, user["password"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
@@ -426,16 +506,197 @@ async def login(credentials: UserLogin):
         }
     }
 
+
+@api_router.post("/app-access/redeem")
+async def redeem_myops_ticket(payload: MyopsTicketRequest):
+    if not myops_required():
+        raise HTTPException(status_code=404, detail="MYOPS access is not enabled")
+    if not (os.getenv("JWT_SECRET_KEY") or os.getenv("OPSFLOW_JWT_SECRET")):
+        raise HTTPException(status_code=503, detail="OpsFlow session signing is not configured")
+    if not is_launch_ticket(payload.ticket):
+        raise HTTPException(status_code=400, detail="Invalid MYOPS launch ticket")
+    try:
+        redeemed = await run_in_threadpool(call_myops, "/api/app/redeem", {"ticket": payload.ticket})
+    except MyopsAccessError as error:
+        raise HTTPException(status_code=503, detail="MYOPS access could not be verified") from error
+    try:
+        app_session = validate_redeem_response(redeemed)
+    except MyopsAccessError as error:
+        raise HTTPException(status_code=403, detail="MYOPS launch ticket is invalid or expired") from error
+
+    identity = await db.myops_identity_links.find_one({
+        "myops_user_ref": app_session["user_ref"],
+        "enabled": True,
+    })
+    if not identity:
+        raise HTTPException(status_code=403, detail="OpsFlow account is not linked to MYOPS")
+    firebase_uid = identity.get("firebase_uid")
+    mongo_user_id = str(identity.get("mongo_user_id") or "")
+    if not isinstance(firebase_uid, str) or not firebase_uid or len(firebase_uid) > 128:
+        raise HTTPException(status_code=403, detail="OpsFlow account link is invalid")
+    try:
+        mongo_object_id = ObjectId(mongo_user_id)
+    except Exception as error:
+        raise HTTPException(status_code=403, detail="OpsFlow account link is invalid") from error
+
+    mongo_user = await db.users.find_one({"_id": mongo_object_id})
+    if not mongo_user:
+        raise HTTPException(status_code=403, detail="OpsFlow backend account is not provisioned")
+    company = await db.companies.find_one({"email": mongo_user.get("email")}) if mongo_user.get("email") else None
+    if company and _derive_company_status(company) == "Suspended":
+        raise HTTPException(status_code=403, detail="OpsFlow business account is suspended")
+
+    try:
+        admin_auth, admin_firestore = _firebase_admin_services()
+        firebase_user = await run_in_threadpool(admin_auth.get_user, firebase_uid)
+        if not firebase_user or firebase_user.disabled:
+            raise HTTPException(status_code=403, detail="OpsFlow Firebase account is not provisioned")
+        profile_ref = admin_firestore.collection("users").document(firebase_uid)
+        profile_snapshot = await run_in_threadpool(profile_ref.get)
+        if not profile_snapshot.exists:
+            raise HTTPException(status_code=403, detail="OpsFlow Firebase profile is not provisioned")
+        session_ref = admin_firestore.collection("myops_access_sessions").document(firebase_uid)
+    except HTTPException:
+        raise
+    except Exception as error:
+        logger.exception("OpsFlow Firebase account validation failed")
+        raise HTTPException(status_code=503, detail="OpsFlow identity service is unavailable") from error
+
+    session_id = app_session["session_id"]
+    expires_at = _valid_until()
+    mongo_expires_at = expires_at.replace(tzinfo=None)
+    session_record = {
+        "myops_session_id": session_id,
+        "myops_user_ref": app_session["user_ref"],
+        "firebase_uid": firebase_uid,
+        "mongo_user_id": mongo_user_id,
+        "product": "opsflow",
+        "valid_until": mongo_expires_at,
+        "revoked_at": None,
+        "updated_at": _utc_now(),
+    }
+    await db.myops_app_sessions.update_one(
+        {"myops_session_id": session_id},
+        {"$set": session_record, "$setOnInsert": {"created_at": _utc_now()}},
+        upsert=True,
+    )
+    try:
+        await run_in_threadpool(session_ref.set, {
+            "myops_session_id": session_id,
+            "product": "opsflow",
+            "active": True,
+            "valid_until": expires_at,
+            "updated_at": datetime.now(timezone.utc),
+        })
+        custom_token = await run_in_threadpool(
+            admin_auth.create_custom_token,
+            firebase_uid,
+            {"myops_product": "opsflow", "myops_session_id": session_id},
+        )
+    except Exception as error:
+        await db.myops_app_sessions.update_one(
+            {"myops_session_id": session_id},
+            {"$set": {"revoked_at": _utc_now(), "valid_until": _utc_now()}},
+        )
+        logger.exception("OpsFlow MYOPS session creation failed")
+        raise HTTPException(status_code=503, detail="OpsFlow session could not be created") from error
+
+    access_token = create_access_token({
+        "user_id": mongo_user_id,
+        "firebase_uid": firebase_uid,
+        "myops_session_id": session_id,
+        "myops_product": "opsflow",
+        "exp": datetime.utcnow() + timedelta(days=30),
+    })
+    return {
+        "firebase_custom_token": custom_token.decode("utf-8") if isinstance(custom_token, bytes) else custom_token,
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "id": mongo_user_id,
+            "firebase_uid": firebase_uid,
+            "email": mongo_user.get("email", ""),
+            "company_name": mongo_user.get("company_name", ""),
+        },
+    }
+
+
+async def _revoke_myops_session(current_user: dict) -> None:
+    session = current_user.get("_myops_session")
+    if not session:
+        return
+    now = _utc_now()
+    await db.myops_app_sessions.update_one(
+        {"myops_session_id": session["myops_session_id"]},
+        {"$set": {"revoked_at": now, "valid_until": now, "updated_at": now}},
+    )
+    try:
+        _, admin_firestore = _firebase_admin_services()
+        ref = admin_firestore.collection("myops_access_sessions").document(session["firebase_uid"])
+        await run_in_threadpool(ref.set, {
+            "myops_session_id": session["myops_session_id"],
+            "product": "opsflow",
+            "active": False,
+            "valid_until": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+        }, merge=True)
+    except Exception:
+        logger.exception("OpsFlow MYOPS Firestore session revocation failed")
+
+
+@api_router.post("/app-access/refresh")
+async def refresh_myops_access(payload: MyopsRefreshRequest, current_user: dict = Depends(get_current_user)):
+    session = current_user.get("_myops_session")
+    if not session:
+        raise HTTPException(status_code=401, detail="MYOPS session required")
+    request_body = {
+        "session_id": session["myops_session_id"],
+        "product": "opsflow",
+        "activity": payload.activity,
+        "sensitive": False,
+    }
+    try:
+        result = await run_in_threadpool(call_myops, "/api/app/entitlement", request_body)
+    except MyopsAccessError as error:
+        raise HTTPException(status_code=503, detail="MYOPS access could not be verified") from error
+    if result.get("entitled") is not True or result.get("session_active") is not True:
+        await _revoke_myops_session(current_user)
+        raise HTTPException(status_code=403, detail="MYOPS package access is not active")
+
+    expires_at = _valid_until()
+    now = _utc_now()
+    refresh_result = await db.myops_app_sessions.update_one(
+        {"myops_session_id": session["myops_session_id"], "revoked_at": None},
+        {"$set": {"valid_until": expires_at.replace(tzinfo=None), "updated_at": now}},
+    )
+    if refresh_result.matched_count != 1:
+        await _revoke_myops_session(current_user)
+        raise HTTPException(status_code=403, detail="MYOPS access is no longer active")
+    try:
+        _, admin_firestore = _firebase_admin_services()
+        ref = admin_firestore.collection("myops_access_sessions").document(session["firebase_uid"])
+        await run_in_threadpool(ref.set, {
+            "myops_session_id": session["myops_session_id"],
+            "product": "opsflow",
+            "active": True,
+            "valid_until": expires_at,
+            "updated_at": datetime.now(timezone.utc),
+        }, merge=True)
+    except Exception as error:
+        logger.exception("OpsFlow MYOPS entitlement could not be written")
+        raise HTTPException(status_code=503, detail="OpsFlow access could not be refreshed") from error
+    return {"entitled": True, "valid_until": expires_at.isoformat()}
+
 @api_router.get("/auth/me")
 async def get_me(current_user: dict = Depends(get_current_user)):
     user_id = str(current_user["_id"])
     trial_start = current_user.get("trial_start_date")
     days_elapsed = 0
-    if trial_start:
+    if trial_start and not myops_required():
         days_elapsed = (datetime.utcnow() - trial_start).days
     
-    trial_days_remaining = max(0, TRIAL_DAYS - days_elapsed)
-    trial_expired = days_elapsed > TRIAL_DAYS
+    trial_days_remaining = 0 if myops_required() else max(0, TRIAL_DAYS - days_elapsed)
+    trial_expired = False if myops_required() else days_elapsed > TRIAL_DAYS
     
     return {
         "id": user_id,
@@ -450,7 +711,8 @@ async def get_me(current_user: dict = Depends(get_current_user)):
 
 
 @api_router.post("/auth/logout")
-async def logout():
+async def logout(current_user: dict = Depends(get_current_user)):
+    await _revoke_myops_session(current_user)
     return {"status": "success", "message": "Logged out successfully"}
 
 
@@ -684,6 +946,8 @@ async def admin_impersonate(company_id: str, current_admin: dict = Depends(get_c
 
 @api_router.post("/subscriptions/payment-success")
 async def payment_success_callback(payload: PaymentSuccessCallback):
+    if myops_required():
+        raise HTTPException(status_code=410, detail="Package billing is managed by MYOPS")
     company = None
     if payload.companyId:
         company = await db.companies.find_one({"_id": ObjectId(payload.companyId)})
@@ -1270,12 +1534,17 @@ async def seed_data(current_user: dict = Depends(get_current_user)):
 # Include router
 app.include_router(api_router)
 
+allowed_origins = [
+    origin.strip()
+    for origin in os.getenv("OPSFLOW_ALLOWED_ORIGINS", "http://localhost:8081,http://localhost:19006").split(",")
+    if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=False,
+    allow_origins=allowed_origins,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 logging.basicConfig(

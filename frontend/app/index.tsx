@@ -39,11 +39,11 @@ export default function Index() {
         <Text style={styles.brand}>BizFlow</Text>
         <View style={styles.navLinks}>
           <Text style={styles.navLink}>Features</Text>
-          <Text style={styles.navLink}>Pricing</Text>
+          <Text style={styles.navLink}>Access</Text>
           <Text style={styles.navLink}>How It Works</Text>
           <Text style={styles.navLink}>Contact</Text>
-          <BizFlowButton title="Login" variant="secondary" onPress={() => router.push('/login')} />
-          <BizFlowButton title="Start Free Trial" onPress={() => router.push('/register')} />
+          <BizFlowButton title="Login with MYOPS" variant="secondary" onPress={() => router.push('/login')} />
+          <BizFlowButton title="Open OpsFlow" onPress={() => router.push('/login')} />
         </View>
       </View>
 
@@ -55,7 +55,7 @@ export default function Index() {
             POS, Purchase, Inventory, Finance & Reports in one cloud-based system built for boutiques, kiosks, and growing small businesses.
           </Text>
           <View style={styles.heroActions}>
-            <BizFlowButton title="Start 7-Day Free Trial" onPress={() => router.push('/register')} />
+            <BizFlowButton title="Continue with MYOPS" onPress={() => router.push('/login')} />
             <BizFlowButton title="View Live Demo" variant="secondary" onPress={() => router.push('/demo')} />
           </View>
           <View style={styles.badgesRow}>
@@ -92,14 +92,14 @@ export default function Index() {
         <View style={styles.pricingCard}>
           <Text style={styles.planName}>Basic Plan</Text>
           <Text style={styles.price}>RM49/month</Text>
-          <Text style={styles.trialNote}>7-Day Free Trial</Text>
+          <Text style={styles.trialNote}>Packages managed by MYOPS</Text>
           <Text style={styles.planFeatures}>• 1 business account</Text>
           <Text style={styles.planFeatures}>• 1 user</Text>
           <Text style={styles.planFeatures}>• Web & Android included</Text>
           <Text style={styles.planFeatures}>• POS, Purchase, Inventory, Finance, Reports, Setup</Text>
           <Text style={styles.planFeatures}>• PDF export</Text>
           <Text style={styles.foundingOffer}>Founding Customer Offer: first 100 customers get RM39/month for life</Text>
-          <BizFlowButton title="Start 7-Day Free Trial" onPress={() => router.push('/register')} />
+          <BizFlowButton title="Continue with MYOPS" onPress={() => router.push('/login')} />
         </View>
         <View style={styles.comingSoonCard}>
           <Text style={styles.comingSoonTitle}>Pro & Advance</Text>
@@ -121,8 +121,8 @@ export default function Index() {
 
       <View style={styles.ctaBanner}>
         <Text style={styles.ctaTitle}>Ready to simplify your business?</Text>
-        <Text style={styles.ctaSubtitle}>Start your 7-Day Free Trial today. No credit card required.</Text>
-        <BizFlowButton title="Get Started" onPress={() => router.push('/register')} />
+        <Text style={styles.ctaSubtitle}>Sign in once at MYOPS. Your package determines which apps you can open.</Text>
+        <BizFlowButton title="Continue to MYOPS" onPress={() => router.push('/login')} />
       </View>
 
       <View style={styles.footer}>
