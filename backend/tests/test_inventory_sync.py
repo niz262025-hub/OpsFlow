@@ -17,11 +17,11 @@ import threading
 import time
 import uuid
 
-BASE_URL = (
-    os.environ.get("EXPO_PUBLIC_BACKEND_URL")
-    or os.environ.get("EXPO_BACKEND_URL")
-    or "https://sales-dashboard-685.preview.emergentagent.com"
-).rstrip("/")
+BASE_URL = (os.environ.get("EXPO_PUBLIC_BACKEND_URL") or os.environ.get("EXPO_BACKEND_URL") or "").rstrip("/")
+pytestmark = pytest.mark.skipif(
+    not BASE_URL,
+    reason="Set EXPO_PUBLIC_BACKEND_URL to an explicit disposable OpsFlow test deployment.",
+)
 
 API = f"{BASE_URL}/api"
 
