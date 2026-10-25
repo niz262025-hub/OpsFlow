@@ -7,6 +7,7 @@ OpsFlow now contains a source-level MYOPS SSO integration foundation. It is **no
 ## Implemented in this branch
 
 - Web login, registration, and password recovery direct users to MYOPS. OpsFlow no longer creates a second email/password session or grants its own trial/subscription access.
+- The `/launch` route waits for the MYOPS session and provisioned profile, then opens the OpsFlow dashboard. Rejected or unprovisioned access gives a return-to-MYOPS action.
 - A one-time MYOPS launch ticket is redeemed by FastAPI using an Ed25519 request signature. Redemption requires a manually provisioned identity link to an existing Firebase UID and Mongo user; unknown links fail closed.
 - FastAPI creates an OpsFlow session, returns a Firebase custom token, and writes a short-lived Firestore access record. The Firebase custom token and backend JWT carry the product/session identifiers.
 - FastAPI protected routes require a non-revoked, unexpired OpsFlow session. Entitlement refresh checks MYOPS; denied access revokes the session. Logout revokes the backend and Firestore sessions.
