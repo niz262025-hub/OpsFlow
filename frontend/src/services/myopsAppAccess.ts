@@ -86,8 +86,14 @@ export async function endMyopsSession(accessToken: string): Promise<void> {
 }
 
 export async function clearMyopsLaunchTicketFromUrl(): Promise<void> {
-  if (typeof window === 'undefined' || !window.location.hash.includes('t=')) return;
-  window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  const hasQueryTicket = url.searchParams.has('t');
+  const hasFragmentTicket = url.hash.includes('t=');
+  if (!hasQueryTicket && !hasFragmentTicket) return;
+  url.searchParams.delete('t');
+  if (hasFragmentTicket) url.hash = '';
+  window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
 }
 
 export async function clearStoredMyopsAccessToken(): Promise<void> {

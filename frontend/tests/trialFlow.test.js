@@ -1,17 +1,44 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { buildTrialCompanyData } = require('../src/utils/trialFlow');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+const ts = require('typescript');
 
-test('buildTrialCompanyData creates a 7-day trial company payload', () => {
-  const company = buildTrialCompanyData('Northwind Boutique', 'Ada Lovelace', 'ada@northwind.com');
+// Local trial provisioning was removed; exercise its replacement SSO boundary.
+function service(href) {
+  const replacements = [];
+  const module = { exports: {} };
+  const sandbox = {
+    module, exports: module.exports, URL, URLSearchParams,
+    require: () => ({ storage: {} }),
+    window: { location: new URL(href), history: { replaceState: (_state, _title, value) => replacements.push(value) } },
+  };
+  const source = fs.readFileSync(path.join(__dirname, '../src/services/myopsAppAccess.ts'), 'utf8');
+  const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } });
+  vm.runInNewContext(compiled.outputText, sandbox);
+  return { ...module.exports, replacements };
+}
 
-  assert.equal(company.name, 'Northwind Boutique');
-  assert.equal(company.status, 'trial');
-  assert.equal(company.plan, 'basic');
-  assert.equal(company.trialDays, 7);
-  assert.equal(company.ownerEmail, 'ada@northwind.com');
-  assert.equal(company.ownerName, 'Ada Lovelace');
-  assert.ok(company.trialStartsAt instanceof Date);
-  assert.ok(company.trialEndsAt instanceof Date);
-  assert.ok(company.trialEndsAt.getTime() > company.trialStartsAt.getTime());
+test('launch accepts only well-formed MYOPS tickets', () => {
+  const { extractMyopsLaunchTicket: extract } = service('https://opsflow.test/launch');
+  const ticket = 'A'.repeat(43);
+  assert.equal(extract(`https://opsflow.test/launch#t=${ticket}`), ticket);
+  assert.equal(extract(`https://opsflow.test/launch?t=${ticket}`), ticket);
+  for (const value of ['bad-url', 'https://opsflow.test/launch#t=short', 'https://opsflow.test/launch']) assert.equal(extract(value), null);
+});
+
+test('clears query and fragment tickets while preserving unrelated query parameters', async () => {
+  const ticket = 'A'.repeat(43);
+  for (const suffix of [`?view=week&t=${ticket}`, `?view=week#t=${ticket}`, `?view=week&t=${ticket}#t=${ticket}`]) {
+    const app = service(`https://opsflow.test/launch${suffix}`);
+    await app.clearMyopsLaunchTicketFromUrl();
+    assert.deepEqual(app.replacements, ['/launch?view=week']);
+  }
+});
+
+test('ordinary navigation does not rewrite history', async () => {
+  const app = service('https://opsflow.test/app?view=week#section');
+  await app.clearMyopsLaunchTicketFromUrl();
+  assert.deepEqual(app.replacements, []);
 });
