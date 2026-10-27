@@ -1,0 +1,35 @@
+name: OpsFlow web and SSO contract checks
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: corepack enable
+      - run: corepack yarn install --frozen-lockfile --ignore-scripts
+      - run: corepack yarn test
+      - run: corepack yarn tsc --noEmit
+      - run: corepack yarn lint
+      - run: corepack yarn expo export --platform web --output-dir dist
+  sso-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install cryptography==50.0.2
+      - run: python -m unittest backend.tests.test_myops_app_access -v

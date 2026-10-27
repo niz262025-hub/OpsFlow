@@ -455,20 +455,20 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   // ---------- Company ----------
   const createCompany = async (data: Omit<Company, 'id'>) => {
     const db = getFirebaseDb();
-    const ref = await addDoc(collection(db, 'companies'), {
+    if (!profile?.uid) throw new Error('Not authenticated');
+    const ref = doc(collection(db, 'companies'));
+    const batch = writeBatch(db);
+    batch.set(ref, {
       ...data,
-      ownerUid: profile?.uid || null,
+      ownerUid: profile.uid,
       createdAt: serverTimestamp(),
     });
-    if (profile?.uid) {
-      await setDoc(doc(db, 'users', profile.uid), {
-        email: profile.email,
-        displayName: profile.displayName || null,
-        companyId: ref.id,
-        role: profile.role || 'admin',
-      }, { merge: true });
-      await refreshProfile();
-    }
+    batch.set(doc(db, 'users', profile.uid), {
+      companyId: ref.id,
+      role: 'admin',
+    }, { merge: true });
+    await batch.commit();
+    await refreshProfile();
     return ref.id;
   };
   const updateCompany = async (data: Partial<Company>) => {

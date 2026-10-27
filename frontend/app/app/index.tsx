@@ -24,18 +24,6 @@ const quickActions = [
   { title: 'Finance', icon: 'account-balance-wallet', path: '/app/finance' },
 ];
 
-function getTrialRemainingDays(trialEndsAt: any, fallbackDays?: number) {
-  if (typeof fallbackDays === 'number' && fallbackDays > 0) return fallbackDays;
-  if (!trialEndsAt) return 7;
-  try {
-    const value = typeof trialEndsAt?.toDate === 'function' ? trialEndsAt.toDate() : new Date(trialEndsAt);
-    const diff = Math.max(0, Math.ceil((value.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
-    return diff;
-  } catch {
-    return 7;
-  }
-}
-
 export default function CustomerDashboard() {
   const router = useRouter();
   const { profile } = useAuth();
@@ -58,9 +46,6 @@ export default function CustomerDashboard() {
     };
   }, [expenses, products, purchases, sales]);
 
-  const trialDaysLeft = getTrialRemainingDays(profile?.trialEndsAt, profile?.trialDays);
-  const isTrial = profile?.status === 'trial';
-
   return (
     <BizFlowDashboardShell
       sidebarItems={modules}
@@ -71,16 +56,10 @@ export default function CustomerDashboard() {
       searchValue={search}
       onSearchChange={setSearch}
       profileName={profile?.displayName || company?.name || 'Business Owner'}
-      profileRole={isTrial ? 'Trial' : 'Active'}
+      profileRole={profile?.role || 'Member'}
       avatarLabel={(profile?.displayName || profile?.email || 'U').charAt(0).toUpperCase()}
     >
       <View style={styles.content}>
-        {isTrial && (
-          <BizFlowSectionCard title="Trial active" subtitle={`${trialDaysLeft} days remaining`} action={<BizFlowButton title="Upgrade" onPress={() => router.push('/subscription' as never)} />}>
-            <Text style={styles.trialBody}>Unlock the full BizFlow experience with the Basic plan and keep every team member aligned.</Text>
-          </BizFlowSectionCard>
-        )}
-
         <View style={styles.kpiGrid}>
           <BizFlowKpiCard label="Today Sales" value={formatMYR(stats.todaySales)} detail="Live from POS" />
           <BizFlowKpiCard label="Purchase Orders" value={formatMYR(stats.purchaseOrders)} detail="Suppliers this week" />
@@ -151,7 +130,6 @@ const styles = StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },
   card: { flex: 1, minWidth: 280 },
   fullCard: { minWidth: 280 },
-  trialBody: { fontSize: 13, color: '#64748B', fontFamily: 'Inter', marginTop: 8 },
   summaryList: { gap: 10 },
   summaryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   summaryLabel: { fontSize: 13, color: '#64748B', fontFamily: 'Inter' },
