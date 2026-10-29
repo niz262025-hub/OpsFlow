@@ -77,6 +77,21 @@ def readiness():
     return {'ready': True, 'database': 'reachable'}
 
 
+@app.get('/api/sso-ready')
+async def sso_readiness():
+    if os.getenv('VERCEL_ENV') != 'preview':
+        raise HTTPException(404, 'Not found')
+    try:
+        result = await run_in_threadpool(call_myops, '/api/app/entitlement', {
+            'session_id': '00000000-0000-4000-8000-000000000001',
+            'product': 'opsflow', 'activity': False, 'sensitive': False})
+    except MyopsAccessError:
+        raise HTTPException(503, 'MYOPS signed transport is unavailable') from None
+    if result.get('entitled') is False and result.get('session_active') is False and 'error' not in result:
+        return {'ready': True, 'signed_transport': 'verified', 'unknown_session': 'denied'}
+    raise HTTPException(503, 'MYOPS signed transport could not be verified')
+
+
 @app.post('/api/app-access/redeem')
 async def redeem(body: Ticket):
     if not is_launch_ticket(body.ticket):
