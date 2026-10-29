@@ -48,6 +48,8 @@ export function BizFlowButton({
 
   return (
     <TouchableOpacity
+      accessibilityRole="button"
+      accessibilityLabel={title}
       onPress={onPress}
       disabled={disabled}
       activeOpacity={0.85}
@@ -175,20 +177,20 @@ export function BizFlowChart({ data, labels }: { data: number[]; labels: string[
 export function BizFlowSidebar({ items, activeKey, onNavigate }: { items: NavItem[]; activeKey: string; onNavigate: (item: NavItem) => void }) {
   const { theme } = useTheme();
   return (
-    <View style={[styles.sidebar, { backgroundColor: '#081A3A', borderRightColor: '#12264C' }]}> 
+    <View style={[styles.sidebar, { backgroundColor: '#071B49', borderRightColor: '#12264C' }]}> 
       <View style={styles.brandWrap}> 
         <View style={[styles.brandIcon, { backgroundColor: 'rgba(255,255,255,0.14)' }]}> 
           <MaterialIcons name="store" size={22} color={'#FFFFFF'} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.brandTitle}>BizFlow</Text>
+          <Text style={styles.brandTitle}>OpsFlow</Text>
           <Text style={styles.brandSubtitle}>Merchant operations</Text>
         </View>
       </View>
       {items.map((item) => {
         const active = item.key === activeKey;
         return (
-          <Pressable key={item.key} style={[styles.navItem, active && { backgroundColor: '#12315E' }]} onPress={() => onNavigate(item)}>
+          <Pressable key={item.key} style={[styles.navItem, active && { backgroundColor: '#4A5D85' }]} onPress={() => onNavigate(item)}>
             <MaterialIcons name={item.icon} size={18} color={active ? '#FFFFFF' : '#93A6C8'} />
             <Text style={[styles.navLabel, active && { color: '#FFFFFF' }]}>{item.label}</Text>
           </Pressable>
@@ -216,7 +218,7 @@ export function BizFlowTopBar({ title, subtitle, searchValue, onSearchChange, pr
       {(profileName || profileRole) ? (
         <View style={[styles.profileChip, { backgroundColor: '#FFFFFF', borderColor: '#E2E8F0' }]}> 
           <View style={[styles.profileAvatar, { backgroundColor: '#DBEAFE' }]}> 
-            <Text style={[styles.profileAvatarText, { color: '#2563EB' }]}>{avatarLabel || profileName?.charAt(0).toUpperCase() || 'U'}</Text>
+            <Text style={[styles.profileAvatarText, { color: '#071B49' }]}>{avatarLabel || profileName?.charAt(0).toUpperCase() || 'U'}</Text>
           </View>
           <View>
             <Text style={styles.profileName}>{profileName}</Text>
