@@ -8,7 +8,7 @@
       "outputDirectory": "dist",
       "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
     },
-    "api": { "root": "backend", "entrypoint": "server:app" }
+    "api": { "root": "backend", "entrypoint": "app:app" }
   },
   "rewrites": [
     { "source": "/api/(.*)", "destination": { "service": "api" } },

@@ -1,82 +1,38 @@
-# OpsFlow: Vercel and Supabase migration
+# OpsFlow Vercel + Supabase staging migration
 
-Owner decision, 30 October 2026: stop using inaccessible Firebase. Host OpsFlow
-on Vercel and replace its application data store with Supabase. MYOPS remains
-the only login and subscription authority. This branch is staging work only.
+Status: implementation in progress; NOT approved for Production release.
 
-## Implemented and verified locally
+## Active runtime
+- Root Vercel Services selects `backend/app.py` (FastAPI) and the Expo static web export.
+- Web AuthContext now uses MYOPS launch, opaque local session tokens and server-validated profile; no Firebase login/import.
+- DataContext now uses the API-backed documentStore adapter. Reads are company-scoped; write batches and optimistic transaction reads go through one database RPC.
+- Firebase removed from active frontend dependencies and its initialization module deleted. Historical `backend/server.py` is not the deployment entrypoint; its dependency list is retained separately as requirements.legacy.txt for reference.
+- Application auth and subscription decisions remain central MYOPS. Legacy local login/register/payment-grant endpoints return410.
+- Server database URL is pinned to OpsFlow Staging projectojamkplflqafedmxbdxb; no other project accepted by this branch.
 
-- Root Vercel Services configuration builds the existing Expo web frontend and
-  routes `/api/*` to the existing FastAPI service without stripping `/api`.
-  Services is a Vercel beta; hosted configuration acceptance is still untested.
-- SPA deep links resolve to `index.html` within the web service.
-- Web MYOPS access calls use the current deployment origin when no explicit API
-  origin is configured. Existing HTTPS and credential-in-URL checks remain.
-- Six frontend tests, TypeScript and Expo web export pass.
-- Main automatic deployment remains disabled. No production deployment changed.
+## Database state
+- OpsFlow Staging projectojamkplflqafedmxbdxb, organizationpjstjwarfjbxjjspvluq, regioneu-west-1. Five foundation tables installed with RLS, no browser table privileges.
+- `20261029183829_opsflow_document_gateway.sql` tested locally, NOT installed remotely. First apply attempt returned conflicting MCP request metadata; second call was interrupted without success. Read-only verification afterward returned zero opsflow functions. Do not declare the gateway installed or bypass the migration transport via untracked DDL.
+- Gateway SQL is service-role-only, validates mapped identity, active company membership,15-minute idle/12-hour absolute expiry and short-lived central verification. Expired or revoked sessions cannot be revived by activity.
+- Atomic batches serialize company writes, compare transaction read versions and roll back on error. Server timestamps resolve in Postgres. Cross-company reassignment, negative product stock and direct browser RPC access are denied.
 
-## Not complete: do not release this branch yet
+## Validation
+- Frontend10tests PASS; TypeScriptPASS; lint exit0; Expo web exportPASS. Bundle2.68MB versus prior Firebase build3.75MB (build outputs, not network benchmarks).
+- Python API7tests + signed MYOPS contract3tests PASS.
+- Local PGlite: both migration files replayPASS, mapping/replay denials, tenant isolation, optimistic conflict, atomic rollback, timestamp resolution, expired/revoked no-revival and browser table/RPC denialPASS.
+- React review: effect listeners/timers cleaned up, interval overlap guarded, only trusted visible user events count as activity; polling does not itself touch activity.
+- No authenticated hosted UAT or broad business-workflow PASS claimed.
 
-AuthContext, DataContext and FastAPI still use Firebase. Changing the Vercel
-hosting configuration does not remove those runtime dependencies. The old
-Firebase configuration remains for reference until its consumers are replaced;
-it must not be used as the migration release destination.
+## Known remaining gates
+- Retry gateway migration only after transport issue resolved and fresh drift check.
+- Secure Preview configuration: OPSFLOW_SUPABASE_URL, OPSFLOW_SUPABASE_SERVICE_ROLE_KEY, MYOPS_APP_API_ORIGIN (staging), MYOPS_APP_ID=opsflow, MYOPS_KEY_VERSION=current, MYOPS_APP_PRIVATE_KEY_CURRENT. Never place private values in EXPO_PUBLIC variables, source, screenshots or chat.
+- Register matching public key in central MYOPS staging, configure preview launch URL, provision explicit MYOPS user-ref/profile/company/member mapping; no email matching or entitlement bypass.
+- Hosted launch, profile, dummy stock/sale/purchase/payment/report flows,15-minute idle, replay/revocation, direct API and tenant-denial UAT.
+- Team invite/join/role-change and company provisioning are blocked pending dedicated scoped endpoints; generic user/invite mutation is denied. Cashier writes currently require domain-specific server operations; generic commits require manager/admin. Do not claim these features complete.
+- Generic document batch validation is not full server-side financial business validation. Validate price/payment/stock invariants and backup/restore workflows before release.
+- DataContext collection polling is temporary15-second polling, not realtime. There is no recovered historical Firebase export.
 
-OpsFlow staging database access and foundation are now verified in the section
-below. Do not reuse other application databases or silently create a billed
-database. The current application still requires its new scoped gateway.
-
-## Required implementation and acceptance
-
-1. Provision/identify OpsFlow staging Supabase in the owner-selected organization.
-2. Replace Firebase custom-token/profile authentication with a server-controlled
-   MYOPS app session. Bind identity to immutable MYOPS user references; never
-   match users by email or add a second password/subscription authority.
-3. Replace all Firestore reads, listeners, batches and transactions with scoped
-   Supabase operations. Preserve atomic sale/stock, receiving, supplier-payment,
-   expense and ledger writes. Browser-supplied company IDs are not authorization.
-4. Keep existing membership and role checks; test cross-company read/write denial,
-   missing/replayed ticket, revoked package and 15-minute inactivity logout.
-5. Remove Firebase imports/dependencies/configuration only after replacement code
-   and tenant/transaction tests pass. Preserve a reviewed rollback history.
-6. Deploy to one OpsFlow staging Vercel project, verify actual MYOPS launch and
-   dummy workflows. Production release requires separate explicit approval under
-   the owner's latest staging-only execution instruction.
-
-## Staging database foundation installed — 30 October 2026
-
-Owner created and authorized OpsFlow Staging, project `ojamkplflqafedmxbdxb`,
-organization `pjstjwarfjbxjjspvluq`, region `eu-west-1`. Connector access verified;
-public schema was empty before installation. This is separate from OpsHub and
-the existing MYOPS/Finance production databases. No new project or billing plan
-was created by the agent.
-
-Applied `opsflow_staging_foundation` from the CLI-generated migration file.
-Five tables hold immutable MYOPS profile references, companies, memberships,
-bound app sessions and versioned company documents. All five have RLS; all
-PUBLIC/anon/authenticated privileges are revoked. Server role receives DML only.
-There are deliberately no browser policies until the scoped gateway is tested.
-This is fail-closed scaffolding, not a completed app data access layer.
-
-Local PGlite replay PASS: five RLS tables, ten browser-role SELECT denials,
-malformed MYOPS reference rejected. No hosted fixture identity or business data
-inserted. Session maximum12h is a schema constraint;15m idle validation, live
-MYOPS entitlement and atomic document operations still require server code/tests.
-
-The earlier note that no staging database exists is superseded by this section.
-Firebase replacement and Vercel deployment remain incomplete. Do not release
-the current source against this schema as if those migrations were complete.
-
-## Existing data boundary
-
-No Firebase export is available. No old data has been copied or recovered.
-An empty replacement database is not a successful migration of historical data.
-Retain references to the inaccessible project for a later authorized export.
-
-## Validation limits
-
-Local export verifies bundling only. No new Supabase database, schema, credential,
-identity mapping, paid infrastructure, Vercel project or deployment was created
-by this preparation change. Hosted SSO and migration acceptance remain pending.
-
-Hosted verification: all5 RLS tables have no anon/authenticated SELECT, INSERT or TRUNCATE. Security advisor reports5 INFO notices for RLS enabled without policies, intentional while browser access remains revoked. Remediation reference: https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy . No warning/error finding returned.
+## Hosting
+- One new project `opsflow-staging`, IDprj_Efwfs2nZzYeI7KQyV0FGExWi0cBQ, connected to existing OpsFlow repository. Vercel Authentication retained. No production/custom domains assigned.
+- Main automatic deployment remains disabled; only reviewed staging branch may be preview deployed.
+- No MYOPS or Finance Production change.

@@ -3,8 +3,10 @@ import { storage } from '@/src/utils/storage';
 export const OPSFLOW_API_TOKEN_KEY = 'auth:opsflow-api-token';
 const LAUNCH_TICKET = /^[A-Za-z0-9_-]{43}$/;
 
+export type OpsFlowProfile = { uid: string; email: string; displayName?: string; companyName?: string; companyId: string; role: 'admin' | 'manager' | 'cashier' };
+
 export type MyopsRedeemResult = {
-  firebaseCustomToken: string;
+  profile: OpsFlowProfile;
   accessToken: string;
 };
 
@@ -54,10 +56,10 @@ export async function redeemMyopsLaunchTicket(ticket: string): Promise<MyopsRede
     body: JSON.stringify({ ticket }),
   });
   const payload = await readJson(response);
-  if (!response.ok || typeof payload.firebase_custom_token !== 'string' || typeof payload.access_token !== 'string') {
+  if (!response.ok || !payload.profile || typeof payload.access_token !== 'string') {
     throw new Error(typeof payload.detail === 'string' ? payload.detail : 'MYOPS could not open OpsFlow.');
   }
-  return { firebaseCustomToken: payload.firebase_custom_token, accessToken: payload.access_token };
+  return { profile: payload.profile as OpsFlowProfile, accessToken: payload.access_token };
 }
 
 export async function refreshMyopsSession(accessToken: string, activity: boolean): Promise<boolean> {
@@ -99,4 +101,17 @@ export async function clearMyopsLaunchTicketFromUrl(): Promise<void> {
 
 export async function clearStoredMyopsAccessToken(): Promise<void> {
   await storage.secureRemove(OPSFLOW_API_TOKEN_KEY);
+}
+
+export async function opsflowRequest(path: string, body?: unknown): Promise<any> {
+  const token = await storage.secureGet<string | null>(OPSFLOW_API_TOKEN_KEY, null);
+  if (!token) throw new Error('MYOPS session required');
+  const response = await fetch(apiUrl(path), {
+    method: body === undefined ? 'GET' : 'POST', cache: 'no-store',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  const result = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(result?.detail || 'OpsFlow request failed');
+  return result;
 }

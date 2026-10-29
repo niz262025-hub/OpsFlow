@@ -16,8 +16,8 @@ import {
   Timestamp,
   writeBatch,
   type DocumentReference,
-} from 'firebase/firestore';
-import { getFirebaseDb } from '@/src/firebase/config';
+} from '@/src/services/documentStore';
+import { getDocumentStore } from '@/src/services/documentStore';
 import { useAuth } from './AuthContext';
 
 // ---------- Types ----------
@@ -267,9 +267,9 @@ function useCollectionListener<T>(collectionName: string, companyId: string | nu
   useEffect(() => {
     if (!companyId) { setState([]); return; }
 
-    let db: ReturnType<typeof getFirebaseDb> | null = null;
+    let db: ReturnType<typeof getDocumentStore> | null = null;
     try {
-      db = getFirebaseDb();
+      db = getDocumentStore();
     } catch (error) {
       setState([]);
       return;
@@ -367,9 +367,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    let db: ReturnType<typeof getFirebaseDb> | null = null;
+    let db: ReturnType<typeof getDocumentStore> | null = null;
     try {
-      db = getFirebaseDb();
+      db = getDocumentStore();
     } catch (error) {
       setCompany(null);
       setLoading(false);
@@ -415,9 +415,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   // Invite listener
   useEffect(() => {
     if (!companyId) { setInvites([]); return; }
-    let db: ReturnType<typeof getFirebaseDb> | null = null;
+    let db: ReturnType<typeof getDocumentStore> | null = null;
     try {
-      db = getFirebaseDb();
+      db = getDocumentStore();
     } catch (error) {
       setInvites([]);
       return;
@@ -435,9 +435,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   // Team members listener
   useEffect(() => {
     if (!companyId) { setTeam([]); return; }
-    let db: ReturnType<typeof getFirebaseDb> | null = null;
+    let db: ReturnType<typeof getDocumentStore> | null = null;
     try {
-      db = getFirebaseDb();
+      db = getDocumentStore();
     } catch (error) {
       setTeam([]);
       return;
@@ -454,26 +454,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   // ---------- Company ----------
   const createCompany = async (data: Omit<Company, 'id'>) => {
-    const db = getFirebaseDb();
-    if (!profile?.uid) throw new Error('Not authenticated');
-    const ref = doc(collection(db, 'companies'));
-    const batch = writeBatch(db);
-    batch.set(ref, {
-      ...data,
-      ownerUid: profile.uid,
-      createdAt: serverTimestamp(),
-    });
-    batch.set(doc(db, 'users', profile.uid), {
-      companyId: ref.id,
-      role: 'admin',
-    }, { merge: true });
-    await batch.commit();
+    if (!profile?.companyId) throw new Error('Company must be provisioned through MYOPS.');
+    const { ownerUid: _owner, ...settings } = data;
+    await updateDoc(doc(getDocumentStore(), 'companies', profile.companyId), settings);
     await refreshProfile();
-    return ref.id;
+    return profile.companyId;
   };
   const updateCompany = async (data: Partial<Company>) => {
     if (!companyId) return;
-    await updateDoc(doc(getFirebaseDb(), 'companies', companyId), data as any);
+    await updateDoc(doc(getDocumentStore(), 'companies', companyId), data as any);
   };
 
   const requireCompany = () => {
@@ -488,7 +477,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 ) => {
   const cId = requireCompany();
 
-  const db = getFirebaseDb();
+  const db = getDocumentStore();
 
   const dup = products.find(
     (x) => x.sku.toLowerCase() === p.sku.toLowerCase()
@@ -543,13 +532,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       const dup = products.find((x) => x.id !== id && x.sku.toLowerCase() === p.sku!.toLowerCase());
       if (dup) throw new Error(`SKU "${p.sku}" already exists`);
     }
-    await updateDoc(doc(getFirebaseDb(), 'products', id), p as any);
+    await updateDoc(doc(getDocumentStore(), 'products', id), p as any);
   };
   const deleteProduct = async (id: string) => {
-    await deleteDoc(doc(getFirebaseDb(), 'products', id));
+    await deleteDoc(doc(getDocumentStore(), 'products', id));
   };
   const archiveProduct = async (id: string) => {
-    await updateDoc(doc(getFirebaseDb(), 'products', id), { status: 'archived' });
+    await updateDoc(doc(getDocumentStore(), 'products', id), { status: 'archived' });
   };
 
   // ---------- Categories ----------
@@ -558,16 +547,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const normalizedName = c.name.trim();
     const duplicate = categories.find((x) => x.name.trim().toLowerCase() === normalizedName.toLowerCase());
     if (duplicate) throw new Error(`Category "${normalizedName}" already exists`);
-    const ref = await addDoc(collection(getFirebaseDb(), 'categories'), { ...c, name: normalizedName, companyId: cId, createdAt: serverTimestamp() });
+    const ref = await addDoc(collection(getDocumentStore(), 'categories'), { ...c, name: normalizedName, companyId: cId, createdAt: serverTimestamp() });
     setCategories((prev) => [{ id: ref.id, companyId: cId, name: normalizedName, description: c.description, createdAt: new Date() } as Category, ...prev.filter((item) => item.id !== ref.id)]);
     return ref.id;
   };
   const updateCategory = async (id: string, c: Partial<Category>) => {
-    await updateDoc(doc(getFirebaseDb(), 'categories', id), c as any);
+    await updateDoc(doc(getDocumentStore(), 'categories', id), c as any);
     setCategories((prev) => prev.map((item) => (item.id === id ? { ...item, ...c } : item)));
   };
   const deleteCategory = async (id: string) => {
-    await deleteDoc(doc(getFirebaseDb(), 'categories', id));
+    await deleteDoc(doc(getDocumentStore(), 'categories', id));
     setCategories((prev) => prev.filter((item) => item.id !== id));
   };
 
@@ -577,39 +566,39 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const normalizedName = s.name.trim();
     const duplicate = suppliers.find((x) => x.name.trim().toLowerCase() === normalizedName.toLowerCase());
     if (duplicate) throw new Error(`Supplier "${normalizedName}" already exists`);
-    const ref = await addDoc(collection(getFirebaseDb(), 'suppliers'), { ...s, name: normalizedName, companyId: cId, createdAt: serverTimestamp() });
+    const ref = await addDoc(collection(getDocumentStore(), 'suppliers'), { ...s, name: normalizedName, companyId: cId, createdAt: serverTimestamp() });
     setSuppliers((prev) => [{ id: ref.id, companyId: cId, name: normalizedName, pic: s.pic, phone: s.phone, email: s.email, address: s.address, createdAt: new Date() } as Supplier, ...prev.filter((item) => item.id !== ref.id)]);
     return ref.id;
   };
   const updateSupplier = async (id: string, s: Partial<Supplier>) => {
-    await updateDoc(doc(getFirebaseDb(), 'suppliers', id), s as any);
+    await updateDoc(doc(getDocumentStore(), 'suppliers', id), s as any);
     setSuppliers((prev) => prev.map((item) => (item.id === id ? { ...item, ...s } : item)));
   };
   const deleteSupplier = async (id: string) => {
-    await deleteDoc(doc(getFirebaseDb(), 'suppliers', id));
+    await deleteDoc(doc(getDocumentStore(), 'suppliers', id));
     setSuppliers((prev) => prev.filter((item) => item.id !== id));
   };
 
   // ---------- Customers ----------
   const createCustomer = async (c: Omit<Customer, 'id' | 'companyId'>) => {
     const cId = requireCompany();
-    const ref = await addDoc(collection(getFirebaseDb(), 'customers'), { ...c, companyId: cId });
+    const ref = await addDoc(collection(getDocumentStore(), 'customers'), { ...c, companyId: cId });
     setCustomers((prev) => [{ id: ref.id, companyId: cId, ...c } as Customer, ...prev.filter((item) => item.id !== ref.id)]);
     return ref.id;
   };
   const updateCustomer = async (id: string, c: Partial<Customer>) => {
-    await updateDoc(doc(getFirebaseDb(), 'customers', id), c as any);
+    await updateDoc(doc(getDocumentStore(), 'customers', id), c as any);
     setCustomers((prev) => prev.map((item) => (item.id === id ? { ...item, ...c } : item)));
   };
   const deleteCustomer = async (id: string) => {
-    await deleteDoc(doc(getFirebaseDb(), 'customers', id));
+    await deleteDoc(doc(getDocumentStore(), 'customers', id));
     setCustomers((prev) => prev.filter((item) => item.id !== id));
   };
 
   // ---------- Sale (atomic tx) ----------
   const createSale = async (input: { items: SaleItem[]; customerId?: string; customerName?: string; discount: number; tax: number; paymentMethod: SalePaymentMethod; paymentReference?: string; }) => {
     const cId = requireCompany();
-    const db = getFirebaseDb();
+    const db = getDocumentStore();
     if (!input.items.length) throw new Error('Cart is empty');
 
     const normalizedPaymentMethod = input.paymentMethod === 'QR' ? 'QR' : input.paymentMethod === 'Bank Transfer' || input.paymentMethod === 'Transfer' ? 'Bank Transfer' : 'Cash';
@@ -717,7 +706,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const createPurchaseOrder = async (input: { supplierId?: string; supplierName?: string; status: 'Draft' | 'Sent' | 'Partially Received' | 'Fully Received' | 'Closed'; expectedDeliveryDate?: string; notes?: string; items: Array<{ productId: string; productName: string; sku: string; quantity: number; unitCost: number; total: number; }> }) => {
     const cId = requireCompany();
-    const db = getFirebaseDb();
+    const db = getDocumentStore();
     if (!input.items.length) throw new Error('Add at least one item to the purchase order');
     const subtotal = input.items.reduce((sum, item) => sum + item.total, 0);
     const orderNumber = `PO${Date.now().toString().slice(-8)}`;
@@ -742,8 +731,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     return payload;
   };
 
-  const refreshPurchaseOrdersFromFirestore = async (companyIdValue: string) => {
-    const db = getFirebaseDb();
+  const refreshPurchaseOrdersFromOpsFlowStore = async (companyIdValue: string) => {
+    const db = getDocumentStore();
     const q = query(collection(db, 'purchase_orders'), where('companyId', '==', companyIdValue));
     const snap = await getDocs(q);
     const rows = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as PurchaseOrder[];
@@ -773,7 +762,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const deletePurchaseOrder = async (id: string) => {
     const cId = requireCompany();
-    const db = getFirebaseDb();
+    const db = getDocumentStore();
     const order = purchaseOrders.find((item) => item.id === id);
     if (!order) throw new Error('Purchase order not found');
 
@@ -795,7 +784,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
     const orderSnap = await getDoc(orderRef);
     if (!orderSnap.exists()) {
-      await refreshPurchaseOrdersFromFirestore(cId);
+      await refreshPurchaseOrdersFromOpsFlowStore(cId);
       return;
     }
 
@@ -830,20 +819,20 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         await batch.commit();
       }
 
-      const refreshedOrders = await refreshPurchaseOrdersFromFirestore(cId);
+      const refreshedOrders = await refreshPurchaseOrdersFromOpsFlowStore(cId);
       const orderStillPresent = refreshedOrders.some((item) => item.id === id);
       if (orderStillPresent) {
         throw new Error(`Purchase order still exists after delete: ${orderRef.path}`);
       }
     } catch (error: any) {
       throw error;
-      throw new Error(error?.message || `Could not delete purchase order from Firestore at ${orderRef.path}`);
+      throw new Error(error?.message || `Could not delete purchase order from OpsFlowStore at ${orderRef.path}`);
     }
   };
 
   const receiveGoods = async (input: { purchaseOrderId: string; supplierInvoiceNumber?: string; deliveryOrderNumber?: string; notes?: string; items: Array<{ productId: string; productName: string; sku: string; orderedQuantity: number; receivedQuantity: number; unitCost: number; total: number; }> }) => {
     const cId = requireCompany();
-    const db = getFirebaseDb();
+    const db = getDocumentStore();
     if (!input.purchaseOrderId) throw new Error('Select a purchase order before saving.');
     if (!input.items.length) throw new Error('Add at least one received item before saving.');
 
@@ -1022,7 +1011,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const createSupplierInvoice = async (input: { purchaseOrderId?: string; goodsReceiptId?: string; supplierId?: string; supplierName?: string; invoiceNumber: string; invoiceDate?: Date; dueDate?: Date; subtotal: number; tax: number; total: number; items?: SupplierInvoiceItem[]; notes?: string; }) => {
     const cId = requireCompany();
-    const db = getFirebaseDb();
+    const db = getDocumentStore();
     const invoiceRef = doc(collection(db, 'supplier_invoices'));
     const normalizedDueDate = input.dueDate ? Timestamp.fromDate(input.dueDate) : undefined;
     const today = new Date();
@@ -1054,7 +1043,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const createPayment = async (input: { invoiceId: string; amount: number; paymentMethod: 'cash' | 'bank'; bankAccountId?: string; reference?: string; notes?: string; }) => {
     const cId = requireCompany();
-    const db = getFirebaseDb();
+    const db = getDocumentStore();
     const invoiceRef = doc(db, 'supplier_invoices', input.invoiceId);
     const invoiceSnap = await getDoc(invoiceRef);
     if (!invoiceSnap.exists()) throw new Error('Supplier invoice not found');
@@ -1116,7 +1105,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   // ---------- Purchase (atomic tx, stock +) ----------
   const createPurchase = async (input: { items: PurchaseItem[]; supplierId?: string; supplierName?: string; discount: number; tax: number; }) => {
     const cId = requireCompany();
-    const db = getFirebaseDb();
+    const db = getDocumentStore();
     if (!input.items.length) throw new Error('No items in purchase');
 
     const subtotal = input.items.reduce((s, i) => s + i.total, 0);
@@ -1240,7 +1229,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const adjustStock = async (productId: string, newQty: number, note: string) => {
     const cId = requireCompany();
-    const db = getFirebaseDb();
+    const db = getDocumentStore();
     await runTransaction(db, async (tx) => {
       const pRef = doc(db, 'products', productId);
       const snap = await tx.get(pRef);
@@ -1260,7 +1249,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   // ---------- Expenses ----------
   const createExpense = async (e: Omit<Expense, 'id' | 'companyId' | 'createdAt'> & { paymentSource?: 'cash' | 'bank'; bankAccountId?: string }) => {
     const cId = requireCompany();
-    const db = getFirebaseDb();
+    const db = getDocumentStore();
     const dateValue = e.date instanceof Date ? Timestamp.fromDate(e.date) : e.date;
     const paymentSource = e.paymentSource || 'cash';
     const expRef = doc(collection(db, 'expenses'));
@@ -1309,7 +1298,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   };
   const updateExpense = async (id: string, e: Partial<Expense>) => {
     const cId = requireCompany();
-    const db = getFirebaseDb();
+    const db = getDocumentStore();
     await runTransaction(db, async (tx) => {
       const expRef = doc(db, 'expenses', id);
       const expSnap = await tx.get(expRef);
@@ -1372,7 +1361,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   };
   const deleteExpense = async (id: string) => {
     requireCompany();
-    const db = getFirebaseDb();
+    const db = getDocumentStore();
     await runTransaction(db, async (tx) => {
       const expRef = doc(db, 'expenses', id);
       const expSnap = await tx.get(expRef);
@@ -1388,7 +1377,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   // ---------- Finance ----------
   const createCashEntry = async (entry: Omit<CashEntry, 'id' | 'companyId' | 'createdAt'>) => {
     const cId = requireCompany();
-    const ref = await addDoc(collection(getFirebaseDb(), 'cash_ledger'), {
+    const ref = await addDoc(collection(getDocumentStore(), 'cash_ledger'), {
       ...entry,
       companyId: cId,
       date: entry.date instanceof Date ? Timestamp.fromDate(entry.date) : entry.date,
@@ -1399,13 +1388,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const createBankAccount = async (account: Omit<BankAccount, 'id' | 'companyId' | 'createdAt'>) => {
     const cId = requireCompany();
-    const ref = await addDoc(collection(getFirebaseDb(), 'bank_accounts'), {
+    const ref = await addDoc(collection(getDocumentStore(), 'bank_accounts'), {
       ...account,
       companyId: cId,
       createdAt: serverTimestamp(),
     });
     if (account.openingBalance > 0) {
-      await addDoc(collection(getFirebaseDb(), 'bank_ledger'), {
+      await addDoc(collection(getDocumentStore(), 'bank_ledger'), {
         companyId: cId,
         bankAccountId: ref.id,
         type: 'opening',
@@ -1420,7 +1409,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const createBankEntry = async (entry: Omit<BankEntry, 'id' | 'companyId' | 'createdAt'>) => {
     const cId = requireCompany();
-    const ref = await addDoc(collection(getFirebaseDb(), 'bank_ledger'), {
+    const ref = await addDoc(collection(getDocumentStore(), 'bank_ledger'), {
       ...entry,
       companyId: cId,
       date: entry.date instanceof Date ? Timestamp.fromDate(entry.date) : entry.date,
@@ -1431,7 +1420,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const transferBankToCash = async (input: { bankAccountId: string; amount: number; reference?: string; note?: string; date?: Date }) => {
     const cId = requireCompany();
-    const db = getFirebaseDb();
+    const db = getDocumentStore();
     const when = input.date ? Timestamp.fromDate(input.date) : Timestamp.fromDate(new Date());
     await runTransaction(db, async (tx) => {
       const bankRef = doc(collection(db, 'bank_ledger'));
@@ -1460,7 +1449,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const createCapitalEntry = async (entry: Omit<CapitalEntry, 'id' | 'companyId' | 'createdAt'>) => {
     const cId = requireCompany();
-    const db = getFirebaseDb();
+    const db = getDocumentStore();
     const when = entry.date instanceof Date ? Timestamp.fromDate(entry.date) : entry.date;
     const capRef = doc(collection(db, 'capital_entries'));
     await runTransaction(db, async (tx) => {
@@ -1512,30 +1501,30 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     const cId = requireCompany();
     if (!profile) throw new Error('Not authenticated');
     const code = generateCode();
-    await addDoc(collection(getFirebaseDb(), 'invite_codes'), {
+    await addDoc(collection(getDocumentStore(), 'invite_codes'), {
       companyId: cId, code, role, createdBy: profile.uid, used: false, createdAt: serverTimestamp(),
     });
     return code;
   };
 
   const deleteInvite = async (id: string) => {
-    await deleteDoc(doc(getFirebaseDb(), 'invite_codes', id));
+    await deleteDoc(doc(getDocumentStore(), 'invite_codes', id));
   };
 
   const changeMemberRole = async (uid: string, role: 'admin' | 'manager' | 'cashier') => {
     if (uid === profile?.uid) throw new Error('You cannot change your own role');
-    await updateDoc(doc(getFirebaseDb(), 'users', uid), { role });
+    await updateDoc(doc(getDocumentStore(), 'users', uid), { role });
   };
 
   const removeMember = async (uid: string) => {
     if (uid === profile?.uid) throw new Error('You cannot remove yourself');
-    await updateDoc(doc(getFirebaseDb(), 'users', uid), { companyId: null });
+    await updateDoc(doc(getDocumentStore(), 'users', uid), { companyId: null });
   };
 
   // ---------- Backup / Restore ----------
   const exportBackup = async () => {
     const cId = requireCompany();
-    const db = getFirebaseDb();
+    const db = getDocumentStore();
     const cols = ['products', 'categories', 'suppliers', 'customers', 'sales', 'purchases', 'expenses', 'stock_movements', 'cash_ledger', 'bank_accounts', 'bank_ledger', 'capital_entries'];
     const dump: any = { version: 1, exportedAt: new Date().toISOString(), companyId: cId, company: company };
     for (const c of cols) {
@@ -1547,7 +1536,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const restoreBackup = async (data: any) => {
     const cId = requireCompany();
-    const db = getFirebaseDb();
+    const db = getDocumentStore();
     if (!data || typeof data !== 'object') throw new Error('Invalid backup file');
     const cols = ['products', 'categories', 'suppliers', 'customers', 'sales', 'purchases', 'expenses', 'stock_movements', 'cash_ledger', 'bank_accounts', 'bank_ledger', 'capital_entries'];
 
