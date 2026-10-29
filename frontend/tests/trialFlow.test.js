@@ -6,11 +6,16 @@ const vm = require('node:vm');
 const ts = require('typescript');
 
 // Local trial provisioning was removed; exercise its replacement SSO boundary.
-function service(href) {
+function service(href, apiOrigin) {
   const replacements = [];
   const module = { exports: {} };
   const sandbox = {
     module, exports: module.exports, URL, URLSearchParams,
+    process: { env: { EXPO_PUBLIC_OPSFLOW_API_URL: apiOrigin } },
+    fetch: async (url) => {
+      replacements.push(url);
+      return { ok: true, json: async () => ({ entitled: true }) };
+    },
     require: () => ({ storage: {} }),
     window: { location: new URL(href), history: { replaceState: (_state, _title, value) => replacements.push(value) } },
   };
@@ -26,6 +31,20 @@ test('launch accepts only well-formed MYOPS tickets', () => {
   assert.equal(extract(`https://opsflow.test/launch#t=${ticket}`), ticket);
   assert.equal(extract(`https://opsflow.test/launch?t=${ticket}`), ticket);
   for (const value of ['bad-url', 'https://opsflow.test/launch#t=short', 'https://opsflow.test/launch']) assert.equal(extract(value), null);
+});
+
+test('web refresh uses its own deployment origin without a configured API host', async () => {
+  const app = service('https://opsflow-preview.vercel.app/launch');
+  assert.equal(await app.refreshMyopsSession('dummy-test-token', false), true);
+  assert.deepEqual(app.replacements, ['https://opsflow-preview.vercel.app/api/app-access/refresh']);
+});
+
+test('explicit API origins retain HTTPS and credential checks', async () => {
+  for (const origin of ['http://remote.test', 'https://name:password@remote.test', 'https://remote.test/path']) {
+    const app = service('https://opsflow-preview.vercel.app/launch', origin);
+    assert.equal(await app.refreshMyopsSession('dummy-test-token', false), false);
+    assert.deepEqual(app.replacements, []);
+  }
 });
 
 test('clears query and fragment tickets while preserving unrelated query parameters', async () => {

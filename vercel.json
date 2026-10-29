@@ -1,4 +1,19 @@
 {
+  "services": {
+    "web": {
+      "root": "frontend",
+      "framework": null,
+      "installCommand": "npm ci --ignore-scripts",
+      "buildCommand": "npx expo export --platform web --output-dir dist",
+      "outputDirectory": "dist",
+      "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+    },
+    "api": { "root": "backend", "entrypoint": "server:app" }
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": { "service": "api" } },
+    { "source": "/(.*)", "destination": { "service": "web" } }
+  ],
   "git": {
     "deploymentEnabled": {
       "main": false

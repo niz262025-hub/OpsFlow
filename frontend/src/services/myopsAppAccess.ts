@@ -24,7 +24,8 @@ export function extractMyopsLaunchTicket(url: string): string | null {
 }
 
 function apiUrl(path: string): string {
-  const origin = process.env.EXPO_PUBLIC_OPSFLOW_API_URL?.trim();
+  const origin = process.env.EXPO_PUBLIC_OPSFLOW_API_URL?.trim()
+    || (typeof window !== 'undefined' ? window.location.origin : undefined);
   if (!origin) throw new Error('OpsFlow access service is not configured.');
   const parsed = new URL(origin);
   if (parsed.protocol !== 'https:' && parsed.hostname !== 'localhost') {
