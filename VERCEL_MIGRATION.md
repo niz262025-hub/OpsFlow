@@ -45,3 +45,12 @@ Status: implementation in progress; NOT approved for Production release.
 - Nonsecret branch Preview variables configured after this build: OPSFLOW_SUPABASE_URL points to new staging project, MYOPS_APP_ID=opsflow, MYOPS_KEY_VERSION=current. They apply to a future build; no extra redeploy until secrets and database gates are ready.
 - Local verification environment disconnected after code tests; reran10 Python tests in isolated venv before disconnect, PASS. Continue using GitHub/Vercel connectors; do not claim new local tests after environment loss.
 - Remaining gateway migration still uninstalled (fresh remote function listingempty). Need operator to run the reviewed gateway SQL in the named OpsFlow Staging SQL Editor if migration transport remains unavailable; no Production SQL.
+
+
+## Owner-installed gateway verified — 30 October 2026
+- Owner reports manual SQL execution. Fresh remote inspection confirms all6 gateway/session/timestamp functions installed. anon/authenticated EXECUTE=false and service_role EXECUTE=true for each.
+- Hosted PostgreSQL rollback-only UATPASS: explicit mapped identity/session, dummy productstock10, cross-company read denial, atomic sale+negative-stock rejection leaves no partial sale, revoked-session touch cannot revive. Entire fixture transaction rolled back. Post-test counts profiles0/companies0/sessions0/documents0.
+- Previous gateway-not-installed statements above are superseded; no repeat migration required. Runtime/identity/SSO acceptance still not claimed.
+- Vercel branch Preview env metadata currently contains only OPSFLOW_SUPABASE_URL, MYOPS_APP_ID, MYOPS_KEY_VERSION. OPSFLOW_SUPABASE_SERVICE_ROLE_KEY and MYOPS_APP_PRIVATE_KEY_CURRENT are absent, not hidden-value failures. Never decrypt or print keys.
+- Current Supabase connection lists OpsFlow Staging only; explicit read of central staging projectwengxxiqwtosirealghx denied permission. Need organization/project access restored for central staging registration and identity lookup. Do not substitute Production origins or keys.
+- Required operator step: securely set OPSFLOW_SUPABASE_SERVICE_ROLE_KEY in opsflow-staging Vercel project, Preview target for migration branch, using existing valid server secret ofojamkplflqafedmxbdxb. No key in chat. Then restore connection scope for MYOPS staging before registering OpsFlow signing public key and explicit test-user mapping. Do not copy Finance or central service key.
