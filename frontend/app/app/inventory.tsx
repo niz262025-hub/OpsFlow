@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, TextInput, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useData } from '@/src/contexts/DataContext';
 import { BizFlowButton, BizFlowDashboardShell, BizFlowKpiCard, BizFlowSectionCard, BizFlowStatusChip, BizFlowTable } from '@/src/components/designSystem';
@@ -18,8 +18,27 @@ const modules = [
 
 export default function CustomerInventory() {
   const router = useRouter();
-  const { products, stockMovements, adjustStock } = useData();
+  const { products, stockMovements, adjustStock, createProduct } = useData();
   const [search, setSearch] = useState('');
+  const [form, setForm] = useState({ name: '', sku: '', costPrice: '', sellingPrice: '', stock: '0', minStock: '10', unit: 'pcs' });
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  const saveProduct = async () => {
+    const numbers = [form.costPrice, form.sellingPrice, form.stock, form.minStock];
+    if (!form.name.trim() || !form.sku.trim() || !form.unit.trim() || numbers.some(value => !value.trim() || !Number.isFinite(Number(value)) || Number(value) < 0)) {
+      setMessage('Enter a name, SKU, unit and valid non-negative prices and quantities.');
+      return;
+    }
+    setSaving(true);
+    setMessage('');
+    try {
+      await createProduct({ name: form.name.trim(), sku: form.sku.trim(), unit: form.unit.trim(), costPrice: Number(form.costPrice), sellingPrice: Number(form.sellingPrice), stock: Number(form.stock), minStock: Number(form.minStock), status: 'active' });
+      setForm({ name: '', sku: '', costPrice: '', sellingPrice: '', stock: '0', minStock: '10', unit: 'pcs' });
+      setMessage('Product saved. It is now available in POS.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Product could not be saved.');
+    } finally { setSaving(false); }
+  };
 
   const filteredProducts = useMemo(() => products.filter((product) => `${product.name} ${product.sku}`.toLowerCase().includes(search.toLowerCase())).sort((a, b) => a.stock - b.stock), [products, search]);
   const lowStockItems = useMemo(() => products.filter((product) => product.stock <= (product.minStock || 10)), [products]);
@@ -28,7 +47,7 @@ export default function CustomerInventory() {
   const restock = async (product: any) => {
     try {
       await adjustStock(product.id, (product.stock || 0) + 1, 'Restocked from merchant inventory');
-    } catch (error) { }
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Restock failed.'); }
   };
 
   return (
@@ -52,6 +71,22 @@ export default function CustomerInventory() {
           <BizFlowKpiCard label="Movements" value={`${stockMovements.length}`} detail="Latest adjustments" tone="success" />
         </View>
 
+        <BizFlowSectionCard title="Add product" subtitle="Create a catalog item for inventory and POS">
+          <View style={styles.formGrid}>
+            {([
+              ['name', 'Product name'], ['sku', 'SKU'], ['costPrice', 'Cost price (RM)'],
+              ['sellingPrice', 'Selling price (RM)'], ['stock', 'Opening stock'],
+              ['minStock', 'Minimum stock'], ['unit', 'Unit'],
+            ] as const).map(([key, label]) => (
+              <View key={key} style={styles.field}>
+                <Text style={styles.listTitle}>{label}</Text>
+                <TextInput accessibilityLabel={label} value={form[key]} onChangeText={value => setForm(current => ({ ...current, [key]: value }))} style={styles.input} keyboardType={['costPrice', 'sellingPrice', 'stock', 'minStock'].includes(key) ? 'decimal-pad' : 'default'} />
+              </View>
+            ))}
+          </View>
+          <BizFlowButton title={saving ? 'Saving…' : 'Save product'} disabled={saving} onPress={saveProduct} />
+        </BizFlowSectionCard>
+        {!!message && <Text accessibilityRole="alert" style={styles.listTitle}>{message}</Text>}
         <View style={styles.grid}>
           <BizFlowSectionCard title="Stock overview" subtitle="Current quantities" style={styles.card}>
             <BizFlowTable columns={[{ key: 'product', label: 'Product' }, { key: 'stock', label: 'Stock' }, { key: 'status', label: 'Status' }, { key: 'action', label: 'Action' }]} rows={filteredProducts.map((product) => ({ product: product.name, stock: `${product.stock}`, status: <BizFlowStatusChip label={product.stock <= (product.minStock || 10) ? 'Low' : 'Healthy'} tone={product.stock <= (product.minStock || 10) ? 'warning' : 'success'} />, action: <BizFlowButton title="Restock" variant="secondary" onPress={() => restock(product)} /> }))} />
@@ -78,6 +113,9 @@ export default function CustomerInventory() {
 }
 
 const styles = StyleSheet.create({
+  formGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 16 },
+  field: { flexGrow: 1, minWidth: 180, gap: 6 },
+  input: { borderWidth: 1, borderColor: '#CBD5E1', borderRadius: 8, padding: 12, color: '#071B49', backgroundColor: '#FFFFFF' },
   content: { gap: 16 },
   kpiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },
