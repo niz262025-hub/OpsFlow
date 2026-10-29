@@ -22,10 +22,9 @@ hosting configuration does not remove those runtime dependencies. The old
 Firebase configuration remains for reference until its consumers are replaced;
 it must not be used as the migration release destination.
 
-The Supabase connector currently lists central MYOPS, Finance, OpsPS Production
-and OpsHub staging only. Do not reuse those application databases or silently
-create a billed database. Confirm the organization and any nonzero project cost
-before provisioning an isolated OpsFlow staging database.
+OpsFlow staging database access and foundation are now verified in the section
+below. Do not reuse other application databases or silently create a billed
+database. The current application still requires its new scoped gateway.
 
 ## Required implementation and acceptance
 
@@ -44,6 +43,30 @@ before provisioning an isolated OpsFlow staging database.
    dummy workflows. Production release requires separate explicit approval under
    the owner's latest staging-only execution instruction.
 
+## Staging database foundation installed — 30 October 2026
+
+Owner created and authorized OpsFlow Staging, project `ojamkplflqafedmxbdxb`,
+organization `pjstjwarfjbxjjspvluq`, region `eu-west-1`. Connector access verified;
+public schema was empty before installation. This is separate from OpsHub and
+the existing MYOPS/Finance production databases. No new project or billing plan
+was created by the agent.
+
+Applied `opsflow_staging_foundation` from the CLI-generated migration file.
+Five tables hold immutable MYOPS profile references, companies, memberships,
+bound app sessions and versioned company documents. All five have RLS; all
+PUBLIC/anon/authenticated privileges are revoked. Server role receives DML only.
+There are deliberately no browser policies until the scoped gateway is tested.
+This is fail-closed scaffolding, not a completed app data access layer.
+
+Local PGlite replay PASS: five RLS tables, ten browser-role SELECT denials,
+malformed MYOPS reference rejected. No hosted fixture identity or business data
+inserted. Session maximum12h is a schema constraint;15m idle validation, live
+MYOPS entitlement and atomic document operations still require server code/tests.
+
+The earlier note that no staging database exists is superseded by this section.
+Firebase replacement and Vercel deployment remain incomplete. Do not release
+the current source against this schema as if those migrations were complete.
+
 ## Existing data boundary
 
 No Firebase export is available. No old data has been copied or recovered.
@@ -55,3 +78,5 @@ Retain references to the inaccessible project for a later authorized export.
 Local export verifies bundling only. No new Supabase database, schema, credential,
 identity mapping, paid infrastructure, Vercel project or deployment was created
 by this preparation change. Hosted SSO and migration acceptance remain pending.
+
+Hosted verification: all5 RLS tables have no anon/authenticated SELECT, INSERT or TRUNCATE. Security advisor reports5 INFO notices for RLS enabled without policies, intentional while browser access remains revoked. Remediation reference: https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy . No warning/error finding returned.
