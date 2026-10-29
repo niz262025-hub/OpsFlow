@@ -54,3 +54,12 @@ Status: implementation in progress; NOT approved for Production release.
 - Vercel branch Preview env metadata currently contains only OPSFLOW_SUPABASE_URL, MYOPS_APP_ID, MYOPS_KEY_VERSION. OPSFLOW_SUPABASE_SERVICE_ROLE_KEY and MYOPS_APP_PRIVATE_KEY_CURRENT are absent, not hidden-value failures. Never decrypt or print keys.
 - Current Supabase connection lists OpsFlow Staging only; explicit read of central staging projectwengxxiqwtosirealghx denied permission. Need organization/project access restored for central staging registration and identity lookup. Do not substitute Production origins or keys.
 - Required operator step: securely set OPSFLOW_SUPABASE_SERVICE_ROLE_KEY in opsflow-staging Vercel project, Preview target for migration branch, using existing valid server secret ofojamkplflqafedmxbdxb. No key in chat. Then restore connection scope for MYOPS staging before registering OpsFlow signing public key and explicit test-user mapping. Do not copy Finance or central service key.
+
+
+## Saved server key verification
+- Owner saved OPSFLOW_SUPABASE_SERVICE_ROLE_KEY as Sensitive, initially targetProduction only in the new opsflow-staging project. Added Preview target without reading/decrypting or replacing value; retained existing target. No MYOPS/Finance Production settings changed.
+- Added zero-row /api/ready probe, runtimecommitd8bb48b, testcommit97f865b59828ca038b16f56a90281bdb5f4e8617. Python API8+contract3=11PASS in isolatedvenv.
+- Explicit staging deploymentdpl_AxN2fALDpuogrHHDo63vo7K7VMcJ READY. GET /api/ready returns503 OpsFlow data service is unavailable.
+- Scoped Supabase edge logs directly confirm readiness request /rest/v1/opsflow_profiles returned401 UNAUTHORIZED_INVALID_API_KEY. Read-only database grant check shows service_role SELECT and public USAGE true; no missing grant evidenced. Credential presence does not establish validity; value never exposed or inspected.
+- Need owner to securely replace existing Sensitive variable with complete valid OpsFlow Staging server secret (sb_secret_... or valid service_role JWT forojamkplflqafedmxbdxb), Preview target. Do not use publishable/anon/central/Finance keys, labels or assignment text. Rebuild affected staging commit after owner correction; no code/auth/RLS bypass.
+- Central staging projectwengxxiqwtosirealghx access remains denied to current connector; signing registration and explicit identity mapping still pending restoration of scope.
