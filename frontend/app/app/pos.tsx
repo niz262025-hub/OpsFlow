@@ -122,9 +122,9 @@ export default function CustomerPos() {
           </BizFlowSectionCard>
         </View>
 
-        <BizFlowSectionCard title="Receipt preview" subtitle="The sale will be saved to the connected Firebase backend" style={styles.fullCard}>
+        <BizFlowSectionCard title="Receipt preview" subtitle="Sales and stock updates are saved to your company" style={styles.fullCard}>
           <View style={styles.receiptCard}>
-            <Text style={styles.receiptTitle}>BizFlow Receipt</Text>
+            <Text style={styles.receiptTitle}>OpsFlow Receipt</Text>
             <Text style={styles.receiptBody}>Order prepared for {paymentMethod}</Text>
             <Text style={styles.receiptBody}>Items: {cartItems.length || 0}</Text>
             <Text style={styles.receiptBody}>Total due: {formatMYR(total)}</Text>
