@@ -71,3 +71,10 @@ Status: implementation in progress; NOT approved for Production release.
 - Fresh /api/ready still503. New scoped Supabase edge log probe confirms401 UNAUTHORIZED_INVALID_API_KEY for the one readiness request; this is not a failed table grant or a hidden-value visibility issue.
 - Current connector organization scope lists MYOPS new organization only, not organization containing central staging. SSO key registration/mapping remains blocked separately.
 - Do not blindly rebuild or weaken guards. Next credential action requires correct existing server secret for OpsFlow Stagingojamkplflqafedmxbdxb, verified from its API Keys page; alternatively inspect only a masked project/key-type screenshot to guide owner. Never request secret value in chat.
+
+
+## Branch-scoped credential accepted
+- Owner updated Sensitive key toPreview, gitBranchfeat/opsflow-vercel-migration, updatedAt1793308172682. No secret value retrieved.
+- Exact staging runtime97f865b59828ca038b16f56a90281bdb5f4e8617 rebuilt asdpl_5ZKvrEoJEXGLCU2QSMp1p8GGY36v READY/targetstaging.
+- Authenticated Vercel transport GET /api/ready200 returns {ready:true,database:reachable}. Correct server access to OpsFlow database nowPASS; earlier401 failures are superseded by this new evidence. No new codefix, privilege change or bypass needed for corrected key.
+- No full SSO PASS: private Ed25519 app key, public registration in MYOPS staging and explicit test-user/company membership remain pending. Connector organization scope is newMYOPS only; central staging access was denied and has not been restored. OpsFlow remains in its separate new database. No Production change.
