@@ -63,3 +63,11 @@ Status: implementation in progress; NOT approved for Production release.
 - Scoped Supabase edge logs directly confirm readiness request /rest/v1/opsflow_profiles returned401 UNAUTHORIZED_INVALID_API_KEY. Read-only database grant check shows service_role SELECT and public USAGE true; no missing grant evidenced. Credential presence does not establish validity; value never exposed or inspected.
 - Need owner to securely replace existing Sensitive variable with complete valid OpsFlow Staging server secret (sb_secret_... or valid service_role JWT forojamkplflqafedmxbdxb), Preview target. Do not use publishable/anon/central/Finance keys, labels or assignment text. Rebuild affected staging commit after owner correction; no code/auth/RLS bypass.
 - Central staging projectwengxxiqwtosirealghx access remains denied to current connector; signing registration and explicit identity mapping still pending restoration of scope.
+
+
+## Credential retry after owner replacement
+- Preview Sensitive metadata updated1793307854915, no value read. Target nowPreview only as requested by owner.
+- Rebuilt same runtime97f865b59828ca038b16f56a90281bdb5f4e8617 as explicit stagingdpl_4V5MHJ9ytTeUqb9sptrmr9nPtbNB, READY.
+- Fresh /api/ready still503. New scoped Supabase edge log probe confirms401 UNAUTHORIZED_INVALID_API_KEY for the one readiness request; this is not a failed table grant or a hidden-value visibility issue.
+- Current connector organization scope lists MYOPS new organization only, not organization containing central staging. SSO key registration/mapping remains blocked separately.
+- Do not blindly rebuild or weaken guards. Next credential action requires correct existing server secret for OpsFlow Stagingojamkplflqafedmxbdxb, verified from its API Keys page; alternatively inspect only a masked project/key-type screenshot to guide owner. Never request secret value in chat.
