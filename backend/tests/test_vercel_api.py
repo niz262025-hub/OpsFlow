@@ -8,6 +8,10 @@ import app as api
 
 class VercelApiTests(unittest.TestCase):
  def setUp(self): self.client=TestClient(api.app)
+ def test_readiness_checks_database_without_returning_profiles(self):
+  with patch.object(api,'database',return_value=[]) as db:
+   self.assertEqual(self.client.get('/api/ready').json(),{'ready':True,'database':'reachable'})
+   db.assert_called_once_with('opsflow_profiles?select=id&limit=0')
  def test_health_identifies_central_auth(self):
   self.assertEqual(self.client.get('/api/health').json()['authentication'],'MYOPS')
  def test_legacy_login_registration_and_payment_cannot_grant_access(self):
