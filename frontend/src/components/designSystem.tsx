@@ -217,7 +217,7 @@ export function BizFlowTopBar({ title, subtitle, searchValue, onSearchChange, pr
       {actions}
       {(profileName || profileRole) ? (
         <View style={[styles.profileChip, { backgroundColor: '#FFFFFF', borderColor: '#E2E8F0' }]}> 
-          <View style={[styles.profileAvatar, { backgroundColor: '#DBEAFE' }]}> 
+          <View style={[styles.profileAvatar, { backgroundColor: '#EEEAF6' }]}> 
             <Text style={[styles.profileAvatarText, { color: '#071B49' }]}>{avatarLabel || profileName?.charAt(0).toUpperCase() || 'U'}</Text>
           </View>
           <View>
@@ -245,7 +245,7 @@ export function BizFlowDashboardShell({ sidebarItems, activeKey, onNavigate, tit
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#F8FAFC' },
+  safeArea: { flex: 1, backgroundColor: '#FFFAF7' },
   shell: { flex: 1, flexDirection: 'row' },
   sidebar: { width: 260, borderRightWidth: 1, paddingHorizontal: 16, paddingTop: 24 },
   brandWrap: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 24 },
@@ -254,7 +254,7 @@ const styles = StyleSheet.create({
   brandSubtitle: { fontSize: 12, color: '#93A6C8', fontFamily: 'Inter' },
   navItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, paddingHorizontal: 12, borderRadius: 12, marginBottom: 4 },
   navLabel: { fontSize: 14, fontWeight: '600', color: '#93A6C8', fontFamily: 'Inter' },
-  main: { flex: 1, backgroundColor: '#F8FAFC' },
+  main: { flex: 1, backgroundColor: '#FFFAF7' },
   mainContent: { padding: 20, gap: 16, paddingBottom: 32 },
   topBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' },
   topBarTitle: { fontSize: 24, fontWeight: '800', color: '#0F172A', fontFamily: 'Inter' },
