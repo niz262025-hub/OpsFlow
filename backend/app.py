@@ -70,6 +70,13 @@ def health():
     return {'service': 'opsflow', 'authentication': 'MYOPS', 'store': 'Supabase'}
 
 
+@app.get('/api/ready')
+def readiness():
+    # Zero-row query checks server credentials without returning profile data.
+    database('opsflow_profiles?select=id&limit=0')
+    return {'ready': True, 'database': 'reachable'}
+
+
 @app.post('/api/app-access/redeem')
 async def redeem(body: Ticket):
     if not is_launch_ticket(body.ticket):
