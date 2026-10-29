@@ -36,3 +36,12 @@ Status: implementation in progress; NOT approved for Production release.
 - One new project `opsflow-staging`, IDprj_Efwfs2nZzYeI7KQyV0FGExWi0cBQ, connected to existing OpsFlow repository. Vercel Authentication retained. No production/custom domains assigned.
 - Main automatic deployment remains disabled; only reviewed staging branch may be preview deployed.
 - No MYOPS or Finance Production change.
+
+
+## Hosted staging build verified
+- Runtime commitd500de1e7eff5126f725d1820ca413716a4c5c7d; Vercel configuration fixa036ecfdadcb2dfd12549f861d6294e1007adafd. Service framework:null was rejected, removed it; automatic deployment disabled for bothmain and migration branch.
+- Staging deploymentdpl_5g7WXp1q393ZQYnSWK2XtDNW4MAk READY, targetstaging, unique hostopsflow-staging-2jl71q61n-mohd-syaiful-nizam1.vercel.app. No custom/live application domain assigned.
+- Authenticated Vercel transport GET /api/health200 with {service:opsflow,authentication:MYOPS,store:Supabase}; GET /api/auth/me without application session403 Not authenticated. This proves Python routing and denial, not a database connection or successful SSO.
+- Nonsecret branch Preview variables configured after this build: OPSFLOW_SUPABASE_URL points to new staging project, MYOPS_APP_ID=opsflow, MYOPS_KEY_VERSION=current. They apply to a future build; no extra redeploy until secrets and database gates are ready.
+- Local verification environment disconnected after code tests; reran10 Python tests in isolated venv before disconnect, PASS. Continue using GitHub/Vercel connectors; do not claim new local tests after environment loss.
+- Remaining gateway migration still uninstalled (fresh remote function listingempty). Need operator to run the reviewed gateway SQL in the named OpsFlow Staging SQL Editor if migration transport remains unavailable; no Production SQL.
