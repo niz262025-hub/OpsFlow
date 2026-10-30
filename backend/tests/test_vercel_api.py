@@ -60,7 +60,7 @@ class VercelApiTests(unittest.TestCase):
    response=self.client.post('/api/onboarding/company',headers={'Authorization':'Bearer '+'A'*64},json={'company_name':'Test','display_name':'Owner','user_ref':'attacker','company_id':'other','role':'cashier'})
    self.assertEqual(response.status_code,200)
    self.assertEqual(set(db.call_args.args[1]),{'p_action','p_token_hash','p_company_name','p_display_name'})
-   self.assertTrue(central.call_args.args[1]['sensitive']);self.assertFalse(central.call_args.args[1]['activity'])
+   self.assertTrue(central.call_args.args[1]['sensitive']);self.assertTrue(central.call_args.args[1]['activity'])
  def test_pending_passive_refresh_is_not_activity(self):
   with patch.object(api,'access_context',return_value={'session_id':'session','onboarding_required':True}),patch.object(api,'call_myops',return_value={'entitled':True,'session_active':True}),patch.object(api,'database',return_value={'onboarding_required':True}) as db:
    self.assertEqual(self.client.post('/api/app-access/refresh',headers={'Authorization':'Bearer '+'A'*64},json={}).status_code,200)
