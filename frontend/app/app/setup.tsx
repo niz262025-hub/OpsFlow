@@ -38,7 +38,7 @@ export default function CustomerSetup() {
     >
       <View style={styles.content}>
         <View style={styles.kpiGrid}>
-          <BizFlowKpiCard label="Company" value={company?.name || 'BizFlow'} detail="Active workspace" />
+          <BizFlowKpiCard label="Company" value={company?.name || 'OpsFlow'} detail="Active workspace" />
           <BizFlowKpiCard label="Categories" value={`${categories.length}`} detail="Product groups" />
           <BizFlowKpiCard label="Suppliers" value={`${suppliers.length}`} detail="Vendor network" tone="success" />
           <BizFlowKpiCard label="Team" value={`${team.length}`} detail="Active collaborators" tone="warning" />
@@ -54,7 +54,7 @@ export default function CustomerSetup() {
         </View>
 
         <BizFlowSectionCard title="Configuration actions" subtitle="Keep the merchant experience aligned" action={<BizFlowButton title="Review layout" variant="secondary" onPress={() => router.push('/app/layout' as never)} />}>
-          <Text style={styles.body}>The setup workspace now mirrors the same design system, navigation, component styling, and merchant-ready workflows as the rest of the BizFlow experience.</Text>
+          <Text style={styles.body}>The setup workspace now mirrors the same design system, navigation, component styling, and merchant-ready workflows as the rest of the OpsFlow experience.</Text>
         </BizFlowSectionCard>
       </View>
     </BizFlowDashboardShell>
