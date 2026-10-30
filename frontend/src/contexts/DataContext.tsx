@@ -19,6 +19,7 @@ import {
 } from '@/src/services/documentStore';
 import { getDocumentStore } from '@/src/services/documentStore';
 import { useAuth } from './AuthContext';
+import { purchaseLines, receiptLines } from '@/src/utils/purchaseValidation';
 
 // ---------- Types ----------
 export interface Company {
@@ -707,7 +708,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const createPurchaseOrder = async (input: { supplierId?: string; supplierName?: string; status: 'Draft' | 'Sent' | 'Partially Received' | 'Fully Received' | 'Closed'; expectedDeliveryDate?: string; notes?: string; items: Array<{ productId: string; productName: string; sku: string; quantity: number; unitCost: number; total: number; }> }) => {
     const cId = requireCompany();
     const db = getDocumentStore();
-    if (!input.items.length) throw new Error('Add at least one item to the purchase order');
+    input = { ...input, items: purchaseLines(input.items) };
+    if (input.items.some(item => !products.some(product => product.id === item.productId))) throw new Error('Select a product from this company.');
     const subtotal = input.items.reduce((sum, item) => sum + item.total, 0);
     const orderNumber = `PO${Date.now().toString().slice(-8)}`;
     const orderRef = doc(collection(db, 'purchase_orders'));
@@ -841,6 +843,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     if (!poSnap.exists()) throw new Error('Purchase order not found');
     const poData = poSnap.data() as any;
     const poItems = (poData.items || []) as PurchaseOrderItem[];
+    input = { ...input, items: receiptLines({ status: poData.status, items: poItems }, input.items) };
 
     const normalizedInvoiceNumber = input.supplierInvoiceNumber?.trim();
     const hasPositiveQty = input.items.some((item) => Number(item.receivedQuantity || 0) > 0);
@@ -891,6 +894,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     }
 
     await runTransaction(db, async (tx) => {
+      const currentOrder = await tx.get(poRef);
+      if (!currentOrder.exists() || currentOrder.version !== poSnap.version) throw new Error('Order changed. Refresh before receiving again.');
       const productUpdates: Array<{
         productRef: any;
         nextStock: number;
@@ -902,7 +907,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       for (const item of input.items) {
         const productRef = doc(db, 'products', item.productId);
         const productSnap = await tx.get(productRef);
-        if (!productSnap.exists()) continue;
+        if (!productSnap.exists()) throw new Error('Received product is unavailable. Refresh and retry.');
         const productData = productSnap.data() as any;
         const currentStock = Number(productData.stock || 0);
         const nextStock = currentStock + Number(item.receivedQuantity || 0);
