@@ -52,12 +52,31 @@ def session_context(digest):
     return result
 
 
+def access_context(digest):
+    context = database('rpc/opsflow_session_context', {'p_token_hash': digest})
+    if not context:
+        context = database('rpc/opsflow_onboarding', {'p_action': 'context', 'p_token_hash': digest})
+    if not context:
+        raise HTTPException(401, 'MYOPS session expired')
+    return context
+
+
+def close_access(digest):
+    database('rpc/opsflow_close_session', {'p_token_hash': digest})
+    database('rpc/opsflow_onboarding', {'p_action': 'close', 'p_token_hash': digest})
+
+
 class Ticket(BaseModel):
     ticket: str = Field(max_length=43)
 
 
 class Refresh(BaseModel):
     activity: bool = False
+
+
+class CompanyOnboarding(BaseModel):
+    company_name: str = Field(min_length=1, max_length=200)
+    display_name: str = Field(min_length=1, max_length=100)
 
 
 class DocumentRequest(BaseModel):
@@ -103,17 +122,22 @@ async def redeem(body: Ticket):
         raise HTTPException(403, 'MYOPS launch could not be verified') from None
     token = secrets.token_urlsafe(48)
     digest = hashlib.sha256(token.encode()).hexdigest()
-    # Existing explicit identity and company membership are mandatory. No email matching.
+    # Identity is derived only from the verified central ticket, never client email.
     context = await run_in_threadpool(database, 'rpc/opsflow_open_session', {
         'p_user_ref': redeemed['user_ref'], 'p_session_id': redeemed['session_id'], 'p_token_hash': digest})
     if not context:
-        raise HTTPException(403, 'OpsFlow identity or membership is not provisioned')
-    return {'access_token': token, 'profile': context}
+        pending = await run_in_threadpool(database, 'rpc/opsflow_onboarding', {
+            'p_action': 'prepare', 'p_token_hash': digest,
+            'p_user_ref': redeemed['user_ref'], 'p_session_id': redeemed['session_id']})
+        if not pending:
+            raise HTTPException(403, 'OpsFlow membership requires administrator assistance')
+        return {'access_token': token, 'profile': None, 'onboarding_required': True}
+    return {'access_token': token, 'profile': context, 'onboarding_required': False}
 
 
 @app.post('/api/app-access/refresh')
 async def refresh(body: Refresh, digest: str = Depends(token_hash)):
-    context = await run_in_threadpool(session_context, digest)
+    context = await run_in_threadpool(access_context, digest)
     try:
         reply = await run_in_threadpool(call_myops, '/api/app/entitlement', {
             'session_id': context['session_id'], 'product': 'opsflow',
@@ -121,9 +145,13 @@ async def refresh(body: Refresh, digest: str = Depends(token_hash)):
     except MyopsAccessError:
         raise HTTPException(503, 'MYOPS access could not be verified') from None
     if reply.get('entitled') is not True or reply.get('session_active') is not True:
-        await run_in_threadpool(database, 'rpc/opsflow_close_session', {'p_token_hash': digest})
+        await run_in_threadpool(close_access, digest)
         raise HTTPException(403, 'MYOPS access is no longer active')
-    result = await run_in_threadpool(database, 'rpc/opsflow_touch_session', {'p_token_hash': digest, 'p_activity': body.activity})
+    if context.get('onboarding_required'):
+        result = await run_in_threadpool(database, 'rpc/opsflow_onboarding', {
+            'p_action': 'touch', 'p_token_hash': digest, 'p_activity': body.activity})
+    else:
+        result = await run_in_threadpool(database, 'rpc/opsflow_touch_session', {'p_token_hash': digest, 'p_activity': body.activity})
     if not result:
         raise HTTPException(401, 'MYOPS session expired')
     return {'entitled': True}
@@ -131,13 +159,34 @@ async def refresh(body: Refresh, digest: str = Depends(token_hash)):
 
 @app.get('/api/auth/me')
 async def me(digest: str = Depends(token_hash)):
-    return await run_in_threadpool(session_context, digest)
+    return await run_in_threadpool(access_context, digest)
 
 
 @app.post('/api/auth/logout')
 async def logout(digest: str = Depends(token_hash)):
-    await run_in_threadpool(database, 'rpc/opsflow_close_session', {'p_token_hash': digest})
+    await run_in_threadpool(close_access, digest)
     return {'logged_out': True}
+
+
+@app.post('/api/onboarding/company')
+async def complete_onboarding(body: CompanyOnboarding, digest: str = Depends(token_hash)):
+    # A pending token cannot access data. Recheck central entitlement before provisioning.
+    context = await run_in_threadpool(access_context, digest)
+    try:
+        reply = await run_in_threadpool(call_myops, '/api/app/entitlement', {
+            'session_id': context['session_id'], 'product': 'opsflow',
+            'activity': False, 'sensitive': True})
+    except MyopsAccessError:
+        raise HTTPException(503, 'MYOPS access could not be verified') from None
+    if reply.get('entitled') is not True or reply.get('session_active') is not True:
+        await run_in_threadpool(close_access, digest)
+        raise HTTPException(403, 'MYOPS access is no longer active')
+    profile = await run_in_threadpool(database, 'rpc/opsflow_onboarding', {
+        'p_action': 'complete', 'p_token_hash': digest,
+        'p_company_name': body.company_name, 'p_display_name': body.display_name})
+    if not profile:
+        raise HTTPException(401, 'Onboarding session expired; reopen OpsFlow from MYOPS')
+    return profile
 
 
 @app.post('/api/data')

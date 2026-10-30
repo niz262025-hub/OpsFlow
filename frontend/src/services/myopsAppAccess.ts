@@ -6,7 +6,8 @@ const LAUNCH_TICKET = /^[A-Za-z0-9_-]{43}$/;
 export type OpsFlowProfile = { uid: string; email: string; displayName?: string; companyName?: string; companyId: string; role: 'admin' | 'manager' | 'cashier' };
 
 export type MyopsRedeemResult = {
-  profile: OpsFlowProfile;
+  profile: OpsFlowProfile | null;
+  onboardingRequired: boolean;
   accessToken: string;
 };
 
@@ -56,10 +57,10 @@ export async function redeemMyopsLaunchTicket(ticket: string): Promise<MyopsRede
     body: JSON.stringify({ ticket }),
   });
   const payload = await readJson(response);
-  if (!response.ok || !payload.profile || typeof payload.access_token !== 'string') {
+  if (!response.ok || (!payload.profile && payload.onboarding_required !== true) || typeof payload.access_token !== 'string') {
     throw new Error(typeof payload.detail === 'string' ? payload.detail : 'MYOPS could not open OpsFlow.');
   }
-  return { profile: payload.profile as OpsFlowProfile, accessToken: payload.access_token };
+  return { profile: (payload.profile as OpsFlowProfile) || null, onboardingRequired: payload.onboarding_required === true, accessToken: payload.access_token };
 }
 
 export async function refreshMyopsSession(accessToken: string, activity: boolean): Promise<boolean> {

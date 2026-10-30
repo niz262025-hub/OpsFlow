@@ -4,11 +4,12 @@ import { router } from 'expo-router';
 import { useAuth } from '@/src/contexts/AuthContext';
 
 export default function MyopsLaunchPage() {
-  const { user, profile, loading } = useAuth();
+  const { user, profile, loading, onboardingRequired } = useAuth();
 
   useEffect(() => {
-    if (user && profile) router.replace('/app' as never);
-  }, [profile, user]);
+    if (onboardingRequired) router.replace('/onboarding' as never);
+    else if (user && profile) router.replace('/app' as never);
+  }, [profile, user, onboardingRequired]);
 
   return (
     <View style={styles.page}>
@@ -17,7 +18,7 @@ export default function MyopsLaunchPage() {
           <ActivityIndicator size="large" color="#2563EB" />
           <Text style={styles.message}>Akses MYOPS disahkan. Membuka OpsFlow…</Text>
         </>
-      ) : !loading && (!user || !profile) ? (
+      ) : !loading && !onboardingRequired && (!user || !profile) ? (
         <>
           <Text style={styles.title}>OpsFlow tak dapat dibuka</Text>
           <Text style={styles.message}>Sesi MYOPS tiada atau pakej OpsFlow tidak aktif. Kembali ke MYOPS dan cuba buka OpsFlow semula.</Text>

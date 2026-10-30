@@ -133,3 +133,14 @@ Status: implementation in progress; NOT approved for Production release.
 - Read-only hosted DB proved stockA4/B3, canonical costs5/2, exactly two receipts12+14, PO26 Fully Received. Browser Reports purchasesRM26 PASS. POS soldA1 viaCashRM10+tax0.60=RM10.60; DB stockA3/B3 and one cash ledger10.6. Dashboard TodaySales10.60, CashBalance10.60, PurchaseOrders26, activeunits6, warehousevalue21, only current-day sales bar all matched. Browser screenshot captured before cleanup.
 - Removed exactly12 disposable records from this UAT by explicit product/order/sale/ledger IDs and linked receipt/movement IDs, under the named staging UAT company only, following owner instruction to clear dummy data. Read-only count remaining_documents0. Identity/company/membership/config retained. No Production changes or new runtime deployment for this acceptance test.
 - Purchase basic create/partial/full receipt, over-receipt denial and report/cash/stock regression now PASS in actual browser. This does not complete team roles/invitations/onboarding, cashier permissions or full OpsFlow release acceptance. Runtime remainsd8d9b40/dpl_88szDPYDc58ie9ETzm23gTnXunmz; PR3 draft; OpsFlow NOT released to Production.
+
+
+## Company onboarding — 30 October 2026 (staging)
+
+New identities from a verified MYOPS launch can create one empty company without a second login. The server binds identity to the signed MYOPS user reference; the browser supplies only company/display names. Creation, admin membership and business session are atomic. Repeated submission is idempotent; concurrent pending sessions cannot create a second company. Suspended or ambiguous memberships cannot self-provision another company.
+
+Pending onboarding tokens cannot use the document gateway. Completion rechecks central entitlement with sensitive=true. The pending session preserves the 15-minute idle and 12-hour absolute limits; passive refresh does not count as activity. Logout revokes both pending and business access. Business documents are never seeded.
+
+Migration: supabase/migrations/20261030042828_opsflow_company_onboarding.sql, installed on OpsFlow staging ojamkplflqafedmxbdxb. A hosted transaction verified creation, idempotent retry, empty documents and revocation, then rolled back all fixtures. Existing profile/company/membership counts remain 1/1/1 and business documents 0. RLS remains enabled; anon/authenticated have no table or RPC access. Advisors report only intentional RLS-without-policy INFO notices for server-only tables.
+
+Validation: 22 backend tests, 20 frontend tests, both PGlite migration/gateway suites, TypeScript, Expo lint and web export PASS. CI includes the new onboarding SQL suite. Real fresh-account browser onboarding UAT remains pending; existing UAT membership must not be deleted to manufacture that scenario. Team invitations and full role/cashier regression remain outstanding. No Production change.

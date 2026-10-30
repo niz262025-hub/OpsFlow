@@ -4,9 +4,11 @@ import { storage } from '@/src/utils/storage';
 import { clearMyopsLaunchTicketFromUrl, clearStoredMyopsAccessToken, endMyopsSession, extractMyopsLaunchTicket, OPSFLOW_API_TOKEN_KEY, redeemMyopsLaunchTicket, refreshMyopsSession, opsflowRequest, type OpsFlowProfile } from '@/src/services/myopsAppAccess';
 export type Role = 'admin' | 'manager' | 'cashier';
 export interface UserProfile extends OpsFlowProfile { status?: string; createdAt?: any; }
+type OnboardingAccess = { onboarding_required: true };
 type User = { uid: string; email: string };
 interface AuthCtx {
- user: User | null; profile: UserProfile | null; loading: boolean;
+ user: User | null; profile: UserProfile | null; loading: boolean; onboardingRequired: boolean;
+ completeOnboarding: (companyName:string,displayName:string)=>Promise<void>;
  register: (email: string,password: string,displayName: string,companyName?: string,onStatusChange?: (message: string)=>void)=>Promise<void>;
  login: (email: string,password: string,companyName?: string,rememberMe?: boolean)=>Promise<void>;
  forgotPassword: (email: string)=>Promise<void>; logout: ()=>Promise<void>; refreshProfile: ()=>Promise<void>;
@@ -15,8 +17,9 @@ interface AuthCtx {
 const AuthContext=createContext<AuthCtx | undefined>(undefined);
 export function AuthProvider({children}:{children:React.ReactNode}) {
  const [user,setUser]=useState<User|null>(null),[profile,setProfile]=useState<UserProfile|null>(null),[loading,setLoading]=useState(true);
- const clear=useCallback(async()=>{setUser(null);setProfile(null);setLoading(false);await clearStoredMyopsAccessToken();await Promise.all(['auth:user','auth:profile','auth:company','auth:workspace'].map(key=>storage.removeItem(key)));},[]);
- const adopt=useCallback((next:UserProfile)=>{if(!next?.uid||!next.companyId||!['admin','manager','cashier'].includes(next.role))throw new Error('Invalid OpsFlow identity');setUser({uid:next.uid,email:next.email||''});setProfile(next);setLoading(false);},[]);
+ const [onboardingRequired,setOnboardingRequired]=useState(false);
+ const clear=useCallback(async()=>{setUser(null);setProfile(null);setOnboardingRequired(false);setLoading(false);await clearStoredMyopsAccessToken();await Promise.all(['auth:user','auth:profile','auth:company','auth:workspace'].map(key=>storage.removeItem(key)));},[]);
+ const adopt=useCallback((next:UserProfile | OnboardingAccess)=>{if('onboarding_required' in next && next.onboarding_required === true){setUser(null);setProfile(null);setOnboardingRequired(true);setLoading(false);return;}if(!('uid' in next)||!next?.uid||!next.companyId||!['admin','manager','cashier'].includes(next.role))throw new Error('Invalid OpsFlow identity');setOnboardingRequired(false);setUser({uid:next.uid,email:next.email||''});setProfile(next);setLoading(false);},[]);
  const refreshProfile=useCallback(async()=>{adopt(await opsflowRequest('/api/auth/me'));},[adopt]);
  const logout=useCallback(async()=>{const token=await storage.secureGet<string|null>(OPSFLOW_API_TOKEN_KEY,null);await clear();if(token)await endMyopsSession(token);},[clear]);
  useEffect(()=>{
@@ -25,7 +28,7 @@ export function AuthProvider({children}:{children:React.ReactNode}) {
    if(busy)return;busy=true;
    try {
     const ticket=url?extractMyopsLaunchTicket(url):null;
-    if(ticket){await clearMyopsLaunchTicketFromUrl();const result=await redeemMyopsLaunchTicket(ticket);if(!alive){await endMyopsSession(result.accessToken);return;}await storage.secureSet(OPSFLOW_API_TOKEN_KEY,result.accessToken);adopt(result.profile);}
+    if(ticket){await clearMyopsLaunchTicketFromUrl();const result=await redeemMyopsLaunchTicket(ticket);if(!alive){await endMyopsSession(result.accessToken);return;}await storage.secureSet(OPSFLOW_API_TOKEN_KEY,result.accessToken);adopt(result.onboardingRequired ? {onboarding_required:true} : result.profile!);}
     else {const token=await storage.secureGet<string|null>(OPSFLOW_API_TOKEN_KEY,null);if(!token||!await refreshMyopsSession(token,false)){if(alive)await clear();return;}const next=await opsflowRequest('/api/auth/me');if(alive)adopt(next);}
    }catch{if(alive)await clear();}finally{busy=false;}
   };
@@ -36,19 +39,20 @@ export function AuthProvider({children}:{children:React.ReactNode}) {
   return()=>{alive=false;sub.remove();if(typeof window!=='undefined')window.removeEventListener('hashchange',hash);};
  },[adopt,clear]);
  useEffect(()=>{
-  if(!user||typeof document==='undefined')return;
+  if((!user&&!onboardingRequired)||typeof document==='undefined')return;
   let lastActivity=Date.now(),lastSent=lastActivity,busy=false;
   const activity=(event:Event)=>{if(event.isTrusted&&document.visibilityState==='visible')lastActivity=Date.now();};
   const events=['pointerdown','keydown','touchstart','scroll'];events.forEach(name=>document.addEventListener(name,activity,{passive:true}));
   const timer=setInterval(()=>{if(busy)return;void(async()=>{busy=true;try{if(Date.now()-lastActivity>=15*60_000){await logout();await Linking.openURL('https://www.myops.com.my/login');return;}const token=await storage.secureGet<string|null>(OPSFLOW_API_TOKEN_KEY,null);const sent=lastActivity;if(!token||!await refreshMyopsSession(token,sent>lastSent))await logout();else lastSent=sent;}finally{busy=false;}})();},10_000);
   return()=>{clearInterval(timer);events.forEach(name=>document.removeEventListener(name,activity));};
- },[logout,user?.uid]);
+ },[logout,user?.uid,onboardingRequired]);
+ const completeOnboarding=useCallback(async(companyName:string,displayName:string)=>{adopt(await opsflowRequest('/api/onboarding/company',{company_name:companyName.trim(),display_name:displayName.trim()}));},[adopt]);
  const central=useCallback(async()=>{await Linking.openURL('https://www.myops.com.my/');},[]);
  const login=useCallback(async()=>{await central();throw new Error('Sign in through MYOPS');},[central]);
  const register=useCallback(async()=>{await central();throw new Error('Register through MYOPS');},[central]);
  const forgotPassword=useCallback(async()=>{await central();},[central]);
  const joinCompanyByCode=useCallback(async(_code:string):Promise<{companyId:string;role:Role}>=>{throw new Error('Company invitations are not enabled during the staging migration.');},[]);
- const value=useMemo(()=>({user,profile,loading,login,register,forgotPassword,logout,refreshProfile,joinCompanyByCode}),[user,profile,loading,login,register,forgotPassword,logout,refreshProfile,joinCompanyByCode]);
+ const value=useMemo(()=>({user,profile,loading,onboardingRequired,completeOnboarding,login,register,forgotPassword,logout,refreshProfile,joinCompanyByCode}),[user,profile,loading,onboardingRequired,completeOnboarding,login,register,forgotPassword,logout,refreshProfile,joinCompanyByCode]);
  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 export function useAuth(){const ctx=useContext(AuthContext);if(!ctx)throw new Error('useAuth must be used inside AuthProvider');return ctx;}

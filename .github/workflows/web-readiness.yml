@@ -19,6 +19,7 @@ jobs:
           node-version: '22'
       - run: npm ci --ignore-scripts
       - run: node scripts/test-supabase-gateway.mjs
+      - run: node scripts/test-onboarding.mjs
       - run: npm test
       - run: npx tsc --noEmit
       - run: npm run lint

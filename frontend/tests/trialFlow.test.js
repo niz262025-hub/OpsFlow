@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const ts = require('typescript');
 
 // Local trial provisioning was removed; exercise its replacement SSO boundary.
-function service(href, apiOrigin) {
+function service(href, apiOrigin, payload = { entitled: true }) {
   const replacements = [];
   const module = { exports: {} };
   const sandbox = {
@@ -14,7 +14,7 @@ function service(href, apiOrigin) {
     process: { env: { EXPO_PUBLIC_OPSFLOW_API_URL: apiOrigin } },
     fetch: async (url) => {
       replacements.push(url);
-      return { ok: true, json: async () => ({ entitled: true }) };
+      return { ok: true, json: async () => payload };
     },
     require: () => ({ storage: {} }),
     window: { location: new URL(href), history: { replaceState: (_state, _title, value) => replacements.push(value) } },
@@ -60,4 +60,15 @@ test('ordinary navigation does not rewrite history', async () => {
   const app = service('https://opsflow.test/app?view=week#section');
   await app.clearMyopsLaunchTicketFromUrl();
   assert.deepEqual(app.replacements, []);
+});
+
+
+test('verified new identity can enter onboarding without a business profile', async () => {
+  const app = service('https://opsflow.test/launch', undefined, {access_token:'A'.repeat(64),profile:null,onboarding_required:true});
+  const result = await app.redeemMyopsLaunchTicket('T'.repeat(43));
+  assert.equal(result.onboardingRequired,true);assert.equal(result.profile,null);
+});
+test('missing profile without explicit onboarding approval is rejected', async () => {
+  const app = service('https://opsflow.test/launch', undefined, {access_token:'A'.repeat(64),profile:null});
+  await assert.rejects(app.redeemMyopsLaunchTicket('T'.repeat(43)));
 });

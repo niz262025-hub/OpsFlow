@@ -5,17 +5,17 @@ import { useAuth } from '@/src/contexts/AuthContext';
 import { storage } from '@/src/utils/storage';
 
 export function CustomerGuard({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, loading, onboardingRequired } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
   useEffect(() => {
     if (loading) return;
     if (!user) {
-      const target = pathname === '/app' ? '/login' : '/login';
-      router.replace(target);
+      const target = onboardingRequired ? '/onboarding' : '/login';
+      router.replace(target as never);
     }
-  }, [loading, pathname, router, user]);
+  }, [loading, pathname, router, user, onboardingRequired]);
 
   if (loading) {
     return (
