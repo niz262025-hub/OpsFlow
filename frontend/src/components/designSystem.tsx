@@ -305,6 +305,6 @@ const styles = StyleSheet.create({
   tableCell: { flex: 1, fontSize: 13, color: '#071B49', fontFamily: 'system-ui' },
   chartRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', height: 140, gap: 10, marginTop: 8 },
   chartBarWrap: { flex: 1, alignItems: 'center', gap: 8 },
-  chartBar: { width: '100%', maxWidth: 28, borderRadius: 999, minHeight: 22 },
+  chartBar: { width: '100%', maxWidth: 28, borderRadius: 999, minHeight: 0 },
   chartLabel: { fontSize: 11, color: '#64748B', fontFamily: 'system-ui' },
 });
