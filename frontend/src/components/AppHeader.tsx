@@ -2,14 +2,12 @@ import React, { useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
 import { useTheme } from '@/src/contexts/ThemeContext';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { useData } from '@/src/contexts/DataContext';
 
 export function AppHeader() {
   const { theme } = useTheme();
-  const router = useRouter();
   const { logout, profile } = useAuth();
   const { company } = useData();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -27,7 +25,6 @@ export function AppHeader() {
     try {
       setMenuOpen(false);
       await logout();
-      router.replace('/login');
     } catch (error: any) {
       Alert.alert('Sign out failed', error?.message || 'Could not sign out right now.');
     } finally {

@@ -9,10 +9,11 @@ import os
 import re
 import secrets
 import time
+from http.cookiejar import CookieJar
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlsplit
-from urllib.request import Request, urlopen
+from urllib.parse import urlsplit, urlencode
+from urllib.request import Request, urlopen, build_opener, HTTPCookieProcessor, HTTPRedirectHandler
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -53,6 +54,11 @@ def _load_signing_config() -> tuple[str, str, str, Ed25519PrivateKey]:
     key_version = os.getenv("MYOPS_KEY_VERSION", "current").strip()
     private_pem = os.getenv(f"MYOPS_APP_PRIVATE_KEY_{key_version.upper()}") or os.getenv("MYOPS_APP_PRIVATE_KEY", "")
     parsed = urlsplit(origin)
+    if os.getenv('VERCEL_ENV') == 'production' and (
+        origin.rstrip('/') != 'https://www.myops.com.my'
+        or os.getenv('MYOPS_STAGING_SHARE_TOKEN')
+    ):
+        raise MyopsAccessError('Production must use the live MYOPS authority without staging transport')
     if (
         parsed.scheme != "https"
         or not parsed.netloc
@@ -91,7 +97,33 @@ def signed_headers(path: str, body: dict[str, Any], *, now_ms: int | None = None
     }
 
 
-def call_myops(path: str, body: dict[str, Any], *, opener: Callable[..., Any] = urlopen) -> dict[str, Any]:
+class SameOriginRedirect(HTTPRedirectHandler):
+    def __init__(self, origin):
+        super().__init__()
+        self.origin = origin
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        parsed = urlsplit(newurl)
+        if f"{parsed.scheme}://{parsed.netloc}" != self.origin:
+            raise MyopsAccessError("MYOPS transport redirect rejected")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def preview_opener(origin):
+    token = os.getenv("MYOPS_STAGING_SHARE_TOKEN", "").strip()
+    if not token:
+        return urlopen
+    parsed = urlsplit(origin)
+    if os.getenv("VERCEL_ENV") != "preview" or parsed.scheme != "https" or not parsed.hostname.endswith(".vercel.app"):
+        raise MyopsAccessError("Staging transport is restricted to Vercel previews")
+    client = build_opener(HTTPCookieProcessor(CookieJar()), SameOriginRedirect(origin))
+    # Only the Vercel layer receives this temporary token. App requests still require signatures.
+    with client.open(Request(origin + "/?" + urlencode({"_vercel_share": token})), timeout=8):
+        pass
+    return client.open
+
+
+def call_myops(path: str, body: dict[str, Any], *, opener: Callable[..., Any] | None = None) -> dict[str, Any]:
     origin, _, _, _ = _load_signing_config()
     request = Request(
         f"{origin}{path}",
@@ -100,7 +132,8 @@ def call_myops(path: str, body: dict[str, Any], *, opener: Callable[..., Any] = 
         method="POST",
     )
     try:
-        with opener(request, timeout=8) as response:
+        send = opener or preview_opener(origin)
+        with send(request, timeout=8) as response:
             payload = json.loads(response.read())
             if not isinstance(payload, dict):
                 raise MyopsAccessError("MYOPS returned an invalid response")

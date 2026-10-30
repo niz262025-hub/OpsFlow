@@ -3,6 +3,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useData } from '@/src/contexts/DataContext';
 import { BizFlowChart, BizFlowDashboardShell, BizFlowKpiCard, BizFlowSectionCard, BizFlowStatusChip, BizFlowTable } from '@/src/components/designSystem';
+import { salesByDay } from '@/src/utils/dashboardTotals';
 import { formatMYR } from '@/src/utils/currency';
 
 const modules = [
@@ -18,15 +19,16 @@ const modules = [
 
 export default function CustomerReports() {
   const router = useRouter();
-  const { sales, purchases, products } = useData();
+  const { sales, purchases, products, goodsReceipts } = useData();
   const [search, setSearch] = useState('');
 
+  const salesTrend = useMemo(() => salesByDay(sales), [sales]);
   const filteredSales = useMemo(() => sales.filter((sale) => `${sale.saleNumber} ${sale.customerName ?? ''}`.toLowerCase().includes(search.toLowerCase())).slice(0, 6), [sales, search]);
   const totals = useMemo(() => ({
     sales: sales.reduce((sum, sale) => sum + (sale.total || 0), 0),
-    purchases: purchases.reduce((sum, purchase) => sum + (purchase.total || 0), 0),
+    purchases: purchases.reduce((sum, purchase) => sum + (purchase.total || 0), 0) + goodsReceipts.reduce((sum, receipt) => sum + (receipt.totalAmount || 0), 0),
     products: products.length,
-  }), [products.length, purchases, sales]);
+  }), [products.length, purchases, sales, goodsReceipts]);
 
   return (
     <BizFlowDashboardShell
@@ -50,7 +52,7 @@ export default function CustomerReports() {
 
         <View style={styles.grid}>
           <BizFlowSectionCard title="Sales trend" subtitle="Last seven days" style={styles.card}>
-            <BizFlowChart data={[42, 55, 49, 68, 74, 81, 90]} labels={['M', 'T', 'W', 'T', 'F', 'S', 'S']} />
+            <BizFlowChart data={salesTrend.values} labels={salesTrend.labels} />
           </BizFlowSectionCard>
           <BizFlowSectionCard title="Recent sales" subtitle="Latest transactions" style={styles.card}>
             <BizFlowTable columns={[{ key: 'sale', label: 'Sale' }, { key: 'status', label: 'Status' }, { key: 'amount', label: 'Amount' }]} rows={filteredSales.map((sale) => ({ sale: sale.saleNumber, status: <BizFlowStatusChip label={sale.paymentMethod || 'Cash'} tone="success" />, amount: formatMYR(sale.total) }))} />

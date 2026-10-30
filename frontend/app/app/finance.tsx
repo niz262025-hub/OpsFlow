@@ -49,7 +49,7 @@ export default function CustomerFinance() {
           <BizFlowKpiCard label="Cash flow" value={formatMYR(totals.cash)} detail="Net movement" tone="warning" />
         </View>
 
-        <BizFlowSectionCard title="Expense ledger" subtitle="Recent transactions from Firebase">
+        <BizFlowSectionCard title="Expense ledger" subtitle="Recent company transactions">
           <BizFlowTable columns={[{ key: 'category', label: 'Category' }, { key: 'description', label: 'Description' }, { key: 'amount', label: 'Amount' }, { key: 'status', label: 'Status' }]} rows={filteredExpenses.map((expense) => ({ category: expense.category, description: expense.description || '—', amount: formatMYR(expense.amount), status: <BizFlowStatusChip label={expense.paymentSource || 'cash'} tone="success" /> }))} />
         </BizFlowSectionCard>
       </View>
