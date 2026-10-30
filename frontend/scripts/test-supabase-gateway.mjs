@@ -27,6 +27,16 @@ assert.equal((await gateway('get',{collection:'products',id:'one'})).data.stock,
 await assert.rejects(gateway('commit',{operations:[op('set','sales','rollback',{total:9}),op('update','products','one',{stock:-1})]}));
 assert.equal(await gateway('get',{collection:'sales',id:'rollback'}),null);
 await assert.rejects(gateway('commit',{operations:[op('update','users',A,{role:'admin'})]}));
+// Two receipts based on the same purchase-order version must not double-count stock.
+await gateway('commit',{operations:[op('set','purchase_orders','po-uat',{companyId:A,status:'Sent',items:[{productId:'one',quantity:3,receivedQuantity:0}]})]});
+const purchaseVersion=(await gateway('get',{collection:'purchase_orders',id:'po-uat'})).version;
+await gateway('commit',{reads:[{collection:'purchase_orders',id:'po-uat',version:purchaseVersion}],operations:[
+ op('update','purchase_orders','po-uat',{status:'Fully Received',items:[{productId:'one',quantity:3,receivedQuantity:3}]}),
+ op('update','products','one',{stock:13}),op('set','goods_receipts','receipt-one',{totalAmount:15})]});
+await assert.rejects(gateway('commit',{reads:[{collection:'purchase_orders',id:'po-uat',version:purchaseVersion}],operations:[
+ op('set','goods_receipts','receipt-duplicate',{totalAmount:15}),op('update','products','one',{stock:16})]}));
+assert.equal((await gateway('get',{collection:'products',id:'one'})).data.stock,13);
+assert.equal(await gateway('get',{collection:'goods_receipts',id:'receipt-duplicate'}),null);
 await db.exec(`update opsflow_app_sessions set last_activity_at=now()-interval '16 minutes',created_at=now()-interval '1 hour',absolute_expires_at=now()+interval '11 hours' where id='${A}';`);
 assert.equal(await call('opsflow_touch_session',[token,true]),false);
 assert.equal(await call('opsflow_session_context',[token]),null);
