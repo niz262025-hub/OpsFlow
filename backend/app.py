@@ -196,7 +196,7 @@ async def complete_onboarding(body: CompanyOnboarding, digest: str = Depends(tok
     try:
         reply = await run_in_threadpool(call_myops, '/api/app/entitlement', {
             'session_id': context['session_id'], 'product': 'opsflow',
-            'activity': False, 'sensitive': True})
+            'activity': True, 'sensitive': True})
     except MyopsAccessError:
         raise HTTPException(503, 'MYOPS access could not be verified') from None
     if reply.get('entitled') is not True or reply.get('session_active') is not True:
