@@ -1,6 +1,7 @@
 """OpsFlow Vercel API. MYOPS is the only authentication authority."""
 import hashlib
 import json
+import logging
 import os
 import re
 import secrets
@@ -49,6 +50,7 @@ def database(path, body=None, method=None):
             raw = response.read()
             return json.loads(raw) if raw else None
     except HTTPError as error:
+        logging.getLogger('opsflow').warning('opsflow_database_http_error status=%s', error.code)
         # Never return upstream bodies, database details or service credentials.
         if error.code == 400:
             raise HTTPException(409, 'Operation rejected; refresh and retry') from None
