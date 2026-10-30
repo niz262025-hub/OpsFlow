@@ -36,7 +36,7 @@ export default function Index() {
   return (
     <ScrollView style={styles.page} contentContainerStyle={styles.contentContainer}>
       <View style={styles.navbar}>
-        <Text style={styles.brand}>BizFlow</Text>
+        <Text style={styles.brand}>OpsFlow</Text>
         <View style={styles.navLinks}>
           <Text style={styles.navLink}>Features</Text>
           <Text style={styles.navLink}>Access</Text>
@@ -50,7 +50,7 @@ export default function Index() {
       <BizFlowSectionCard style={styles.heroCard}>
         <View style={styles.heroTextWrap}>
           <Text style={styles.eyebrow}>All-in-one business operations for Malaysian SMEs</Text>
-          <Text style={styles.heroTitle}>Run Your Business Smarter with BizFlow</Text>
+          <Text style={styles.heroTitle}>Run Your Business Smarter with OpsFlow</Text>
           <Text style={styles.heroSubtitle}>
             POS, Purchase, Inventory, Finance & Reports in one cloud-based system built for boutiques, kiosks, and growing small businesses.
           </Text>
@@ -76,7 +76,7 @@ export default function Index() {
       </View>
 
       <View style={styles.sectionAlt}>
-        <Text style={styles.sectionTitle}>Why businesses choose BizFlow</Text>
+        <Text style={styles.sectionTitle}>Why businesses choose OpsFlow</Text>
         <View style={styles.benefitList}>
           {benefits.map((item) => (
             <View key={item} style={styles.benefitItem}>
@@ -126,7 +126,7 @@ export default function Index() {
       </View>
 
       <View style={styles.footer}>
-        <Text style={styles.footerBrand}>BizFlow</Text>
+        <Text style={styles.footerBrand}>OpsFlow</Text>
         <View style={styles.footerLinks}>
           <Text style={styles.footerLink}>Privacy Policy</Text>
           <Text style={styles.footerLink}>Terms of Service</Text>
