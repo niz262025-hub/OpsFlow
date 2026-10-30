@@ -22,7 +22,7 @@ STAGING_PROJECT_REF = 'ojamkplflqafedmxbdxb'
 
 def database_config():
     origin = os.getenv('OPSFLOW_SUPABASE_URL', '').rstrip('/')
-    key = os.getenv('OPSFLOW_SUPABASE_SERVICE_ROLE_KEY', '')
+    key = os.getenv('OPSFLOW_SUPABASE_SECRET_KEY') or os.getenv('OPSFLOW_SUPABASE_SERVICE_ROLE_KEY', '')
     production = os.getenv('VERCEL_ENV') == 'production'
     project_ref = os.getenv('OPSFLOW_SUPABASE_PROJECT_REF', '' if production else STAGING_PROJECT_REF)
     parsed = urlsplit(origin)
@@ -37,10 +37,13 @@ def database_config():
 
 def database(path, body=None, method=None):
     origin, key = database_config()
+    headers = {'apikey': key, 'Content-Type': 'application/json', 'Prefer': 'return=representation'}
+    if not key.startswith('sb_secret_'):
+        headers['Authorization'] = 'Bearer ' + key
     request = Request(origin + '/rest/v1/' + path,
         data=json.dumps(body).encode() if body is not None else None,
         method=method or ('POST' if body is not None else 'GET'),
-        headers={'apikey': key, 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json', 'Prefer': 'return=representation'})
+        headers=headers)
     try:
         with urlopen(request, timeout=15) as response:
             raw = response.read()

@@ -119,6 +119,11 @@ export async function opsflowRequest(path: string, body?: unknown): Promise<any>
 
 // Keep staging users within the existing staging portal; production uses the official domain.
 export function myopsPortalUrl(): string {
+  // A Production build may keep the existing Vercel project name containing staging.
+  // Only the canonical MYOPS origin is accepted as an override; never arbitrary URLs.
+  if (process.env.EXPO_PUBLIC_MYOPS_PORTAL_ORIGIN === 'https://www.myops.com.my') {
+    return 'https://www.myops.com.my/';
+  }
   const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
   return /^opsflow-staging(?:-[a-z0-9-]+)?\.vercel\.app$/.test(hostname)
     ? 'https://southerndotcom-website-git-feat-myop-ca0019-mohd-syaiful-nizam1.vercel.app/'

@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from fastapi.testclient import TestClient
 import app as api
@@ -84,4 +84,13 @@ class VercelApiTests(unittest.TestCase):
  def test_existing_staging_configuration_remains_valid(self):
   with patch.dict(api.os.environ,{'VERCEL_ENV':'preview','OPSFLOW_SUPABASE_URL':'https://'+api.STAGING_PROJECT_REF+'.supabase.co','OPSFLOW_SUPABASE_SERVICE_ROLE_KEY':'dummy'},clear=True):
    self.assertEqual(api.database_config()[1],'dummy')
+ def test_secret_api_key_uses_apikey_header_without_bearer(self):
+  for key in ['sb_secret_dummy','legacy-test-key']:
+   response=MagicMock();response.__enter__.return_value.read.return_value=b'[]'
+   with patch.object(api,'database_config',return_value=('https://'+api.STAGING_PROJECT_REF+'.supabase.co',key)),patch.object(api,'urlopen',return_value=response) as transport:
+    self.assertEqual(api.database('opsflow_profiles?limit=0'),[])
+    request=transport.call_args.args[0]
+    self.assertEqual(request.get_header('Apikey'),key)
+    if key.startswith('sb_secret_'): self.assertIsNone(request.get_header('Authorization'))
+    else: self.assertEqual(request.get_header('Authorization'),'Bearer '+key)
 if __name__=='__main__':unittest.main()

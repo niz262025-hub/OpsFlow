@@ -6,12 +6,12 @@ const vm = require('node:vm');
 const ts = require('typescript');
 
 // Local trial provisioning was removed; exercise its replacement SSO boundary.
-function service(href, apiOrigin, payload = { entitled: true }) {
+function service(href, apiOrigin, payload = { entitled: true }, portalOrigin) {
   const replacements = [];
   const module = { exports: {} };
   const sandbox = {
     module, exports: module.exports, URL, URLSearchParams,
-    process: { env: { EXPO_PUBLIC_OPSFLOW_API_URL: apiOrigin } },
+    process: { env: { EXPO_PUBLIC_OPSFLOW_API_URL: apiOrigin, EXPO_PUBLIC_MYOPS_PORTAL_ORIGIN: portalOrigin } },
     fetch: async (url) => {
       replacements.push(url);
       return { ok: true, json: async () => payload };
@@ -81,4 +81,11 @@ test('logout destination keeps staging isolated and production on MYOPS', () => 
   for (const host of ['flow.myops.com.my','opsflow.myops.com.my','opsflow-staging.vercel.app.attacker.test']) {
     assert.equal(service('https://'+host+'/app').myopsPortalUrl(),'https://www.myops.com.my/');
   }
+});
+
+
+test('production portal override works on Vercel deployment hostnames', () => {
+ const origin='https://opsflow-staging-deployment.vercel.app/app';
+ assert.equal(service(origin,undefined,{},'https://www.myops.com.my').myopsPortalUrl(),'https://www.myops.com.my/');
+ assert.equal(service(origin,undefined,{},'https://attacker.test').myopsPortalUrl(),'https://southerndotcom-website-git-feat-myop-ca0019-mohd-syaiful-nizam1.vercel.app/');
 });
