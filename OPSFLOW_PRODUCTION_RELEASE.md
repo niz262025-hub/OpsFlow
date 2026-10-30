@@ -1,27 +1,33 @@
 # OpsFlow Production release — 30 October 2026
 
-Owner approved Production deployment and the new OpsFlow Production database inside the existing MYOPS organization.
+## Live deployment
 
-## Installed and verified
+Owner approved Production deployment and an isolated OpsFlow Production database in the existing MYOPS organization.
 
-- Supabase OpsFlow Production: sdrcndkdvvveisgtrlvp, MYOPS organization pjstjwarfjbxjjspvluq, Singapore ap-southeast-1, ACTIVE_HEALTHY.
-- All three repository migrations are now installed. The owner manually installed the gateway after connector requestState failures.
-- SQL rollback test PASS: onboarding, idempotent retry, product write/read and session revocation. All fixtures rolled back; profiles/companies/documents remain 0/0/0.
-- Six tables have RLS enabled. anon/authenticated cannot SELECT tables or execute the document gateway.
-- Production-only Vercel configuration is stored on existing project opsflow-staging (prj_Efwfs2nZzYeI7KQyV0FGExWi0cBQ), separate from Preview. A distinct sensitive Ed25519 private key is configured; its public key is registered in central MYOPS Production with opsflow enabled=false until verification succeeds.
-- Domain opsflow.myops.com.my is verified and assigned to the OpsFlow project. No other DNS records changed.
-- First OpsFlow Production build f61772bdf2f4f4cc9be4fef4d3b9179807f3bb35 is READY: dpl_AJSD5GFRY42mxnGYS7eosnRVzEsD. This was promoted to the new domain for readiness checks.
-- Diagnostic candidate 231c91c433ac488c54c55a116a746ac244950c32 is READY: dpl_QzgWA7xUnTneJcGbTVa2JWJaawad. It logs only the upstream HTTP status, never bodies or credentials. Both CI jobs PASS; 29 backend tests PASS.
-- Staging branch alias was restored to dpl_4To5R97zBGynwrUK1sucvVruQLnA after Vercel assigned it during the first Production build. Deploy subsequent Production candidates from an immutable SHA to avoid moving that alias.
+- App URL: https://opsflow.myops.com.my
+- OpsFlow code: 231c91c433ac488c54c55a116a746ac244950c32, branch feat/opsflow-vercel-migration, PR #3.
+- Active OpsFlow Production deployment: dpl_C5PTH8w9J6FuEpKbDXjTUaypuAkH, READY. Rebuilt after the owner replaced the rejected secret key. Custom domain alias verified against this deployment.
+- MYOPS URL: https://www.myops.com.my
+- MYOPS code is unchanged from its previous live release: 6b94b84420fece804c12934301dc593b2749ab8b, release/platform-admin-live, PR #28. Production environment adds only the OpsFlow launch URL.
+- Active MYOPS Production deployment: dpl_5LyCwPoWcmx5C48pqFZnXL45yUza, READY; www.myops.com.my alias verified. Prior rollback: dpl_J4xs36QDX49qGcHdqFKZKRoaQGdP.
+- Existing OpsFinance deployment/database were not changed.
 
-## Confirmed blocker — database credential rejected
+## Database and security verification
 
-The owner saved OPSFLOW_SUPABASE_SECRET_KEY as Sensitive / Production. However, HTTPS GET https://opsflow.myops.com.my/api/ready returns 503. Supabase edge logs for /rest/v1/opsflow_profiles confirm HTTP 401 and UNAUTHORIZED_INVALID_API_KEY. This is an observed credential rejection, not an inference from hidden values. Do not retrieve, print or copy the secret into chat.
+Supabase OpsFlow Production: sdrcndkdvvveisgtrlvp, MYOPS organization pjstjwarfjbxjjspvluq, Singapore ap-southeast-1, ACTIVE_HEALTHY. All three repository migrations installed. The owner manually completed the gateway after connector requestState failures.
 
-The owner must replace this environment value with a valid Secret key (sb_secret_...) from Supabase project sdrcndkdvvveisgtrlvp itself. Do not use central MYOPS or staging project keys. After Save, rebuild the reviewed code for Production so the new environment value is loaded. Do not rerun database migrations.
+SQL rollback test PASS: pending onboarding isolation, company creation, idempotency, product write/read and session revocation. Fixtures rolled back. Before authenticated UAT, profiles/companies/documents remain 0/0/0. Six tables have RLS enabled and no anon/authenticated SELECT privileges. The document RPC is not executable by browser roles.
 
-## MYOPS live status and next action
+A separate Production Ed25519 private key is stored as a sensitive Vercel value. The matching public key is registered in central MYOPS Production, with opsflow client enabled=true after database connectivity passed. Central entitlement checks remain active; no paid subscription record was fabricated. Staging and Production credentials/database references are separate.
 
-Production MYOPS_APP_URL_OPSFLOW=https://opsflow.myops.com.my is configured. The existing live source commit 6b94b84420fece804c12934301dc593b2749ab8b was rebuilt without merging staging: candidate dpl_5LyCwPoWcmx5C48pqFZnXL45yUza is READY. It has NOT been promoted; www.myops.com.my remains on dpl_J4xs36QDX49qGcHdqFKZKRoaQGdP. OpsFinance is unchanged.
+The first Production readiness check correctly failed closed with HTTP 503; Supabase logs proved 401 UNAUTHORIZED_INVALID_API_KEY. The owner replaced OPSFLOW_SUPABASE_SECRET_KEY privately. After rebuilding, GET https://opsflow.myops.com.my/api/ready returns HTTP 200 with database=reachable.
 
-After OpsFlow database readiness returns 200: enable only the matching production opsflow client, promote the prepared MYOPS candidate, verify MYOPS login -> entitlement -> company onboarding -> OpsFlow dashboard -> logout directly to MYOPS. Authenticated Production UAT remains pending. Never claim OpsFlow live/PASS until this succeeds. Keep RLS, central entitlement, 15-minute idle and 12-hour absolute limits. Payments remain deferred.
+HTTP checks: MYOPS homepage 200; OpsFlow database readiness 200; anonymous /api/auth/me 403; Preview-only /api/sso-ready 404 in Production. 29 backend tests and both GitHub CI jobs PASS on code 231c91c433ac488c54c55a116a746ac244950c32.
+
+The staging branch alias remains on dpl_4To5R97zBGynwrUK1sucvVruQLnA. Deploy Production candidates from an immutable SHA to avoid moving that staging alias.
+
+## Remaining verification
+
+Authenticated Production UAT is PENDING, not PASS. The browser secure login returned submitted but subsequently showed the recovery page; a fresh MYOPS tab showed Register/Login, so authenticated success was not assumed. No password reset was requested by the agent. Continue with normal MYOPS login, then Open OpsFlow -> first-company onboarding -> dashboard -> logout directly to MYOPS. Preserve central login, subscription/feature checks, RLS and the existing 15-minute idle / 12-hour absolute limits.
+
+Fresh-account onboarding browser UAT, staff invitations and full role/cashier regression remain tracked separately. Deployment/live availability does not imply every OpsFlow module has passed UAT. Payments remain deferred.
