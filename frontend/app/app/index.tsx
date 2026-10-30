@@ -51,7 +51,7 @@ export default function CustomerDashboard() {
       sidebarItems={modules}
       activeKey="dashboard"
       onNavigate={(item) => (item.path === '/app' ? router.replace('/app' as never) : router.push(item.path as never))}
-      title="BizFlow Dashboard"
+      title="OpsFlow Dashboard"
       subtitle="Customer workspace"
       searchValue={search}
       onSearchChange={setSearch}
