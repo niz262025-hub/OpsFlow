@@ -26,8 +26,12 @@ HTTP checks: MYOPS homepage 200; OpsFlow database readiness 200; anonymous /api/
 
 The staging branch alias remains on dpl_4To5R97zBGynwrUK1sucvVruQLnA. Deploy Production candidates from an immutable SHA to avoid moving that staging alias.
 
-## Remaining verification
+## Authenticated Production UAT — latest observation
 
-Authenticated Production UAT is PENDING, not PASS. The browser secure login returned submitted but subsequently showed the recovery page; a fresh MYOPS tab showed Register/Login, so authenticated success was not assumed. No password reset was requested by the agent. Continue with normal MYOPS login, then Open OpsFlow -> first-company onboarding -> dashboard -> logout directly to MYOPS. Preserve central login, subscription/feature checks, RLS and the existing 15-minute idle / 12-hour absolute limits.
+MYOPS login is now visibly confirmed: My Account, Admin and Logout appeared on https://www.myops.com.my/. Clicking OpsFlow Open App reached https://opsflow.myops.com.my/onboarding without a second login. PASS for central-login launch through verified onboarding access. Production pending onboarding session 93acb784-4e1d-4910-9606-235ce816b4bf was created at 2026-10-30T08:22:48.280318Z.
 
-Fresh-account onboarding browser UAT, staff invitations and full role/cashier regression remain tracked separately. Deployment/live availability does not imply every OpsFlow module has passed UAT. Payments remain deferred.
+The form is prepared with display name Mohd Syaiful Nizam and company Southern Dotcom Enterprise, inferred from the existing MYOPS owner/business identity. The create-company click was rejected by automatic approval review because the owner has not explicitly confirmed creation of real Production data and those exact values. No alternative execution was attempted. Request owner confirmation before submitting that button.
+
+Read-only verification after the rejection: profiles=0, companies=0, business documents=0, business sessions=0 and completed onboardings=0. No company has been created. Dashboard access after onboarding and browser logout remain untested in Production. Confirm the prepared company details, then complete onboarding -> empty dashboard -> logout directly to MYOPS. If the pending session expires, relaunch from MYOPS normally; do not extend or bypass expiry.
+
+Staff invitations and full role/cashier regression remain tracked separately. Deployment availability does not imply every module passed UAT. Payments remain deferred.
