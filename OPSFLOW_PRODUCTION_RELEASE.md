@@ -24,14 +24,18 @@ The first Production readiness check correctly failed closed with HTTP 503; Supa
 
 HTTP checks: MYOPS homepage 200; OpsFlow database readiness 200; anonymous /api/auth/me 403; Preview-only /api/sso-ready 404 in Production. 29 backend tests and both GitHub CI jobs PASS on code 231c91c433ac488c54c55a116a746ac244950c32.
 
-The staging branch alias remains on dpl_4To5R97zBGynwrUK1sucvVruQLnA. Deploy Production candidates from an immutable SHA to avoid moving that staging alias.
+Staging fix candidate: dpl_8JXvXw2wncnRLdoxbbKSoYsK8Bud (READY), code 788edc84cefe08c7030f1c41a991dba0d243975a. Deploy Production candidates from an immutable SHA to avoid moving the staging branch alias.
 
 ## Authenticated Production UAT — latest observation
 
 MYOPS login is now visibly confirmed: My Account, Admin and Logout appeared on https://www.myops.com.my/. Clicking OpsFlow Open App reached https://opsflow.myops.com.my/onboarding without a second login. PASS for central-login launch through verified onboarding access. Production pending onboarding session 93acb784-4e1d-4910-9606-235ce816b4bf was created at 2026-10-30T08:22:48.280318Z.
 
-The form is prepared with display name Mohd Syaiful Nizam and company Southern Dotcom Enterprise, inferred from the existing MYOPS owner/business identity. The create-company click was rejected by automatic approval review because the owner has not explicitly confirmed creation of real Production data and those exact values. No alternative execution was attempted. Request owner confirmation before submitting that button.
+The owner replied “ok teruskan” after the exact Production company/name confirmation request. The UI create action was allowed, but failed with “MYOPS access could not be verified”. Logging out returned directly to https://www.myops.com.my/ (PASS for redirect). Relaunching OpsFlow through MYOPS again required no second login, created pending session 4bcf1e4d-7427-4d59-8966-9843a2e58902 at 2026-10-30T08:37:23.137439Z, and submitting the same form failed again. This is not evidence of an inactivity timeout: the fresh-session failure revealed a request-contract defect.
 
-Read-only verification after the rejection: profiles=0, companies=0, business documents=0, business sessions=0 and completed onboardings=0. No company has been created. Dashboard access after onboarding and browser logout remain untested in Production. Confirm the prepared company details, then complete onboarding -> empty dashboard -> logout directly to MYOPS. If the pending session expires, relaunch from MYOPS normally; do not extend or bypass expiry.
+Confirmed source-level cause: OpsFlow complete_onboarding sends sensitive=true, activity=false; live MYOPS server/app-access.js rejects sensitive requests unless activity=true with HTTP 400, which the adapter maps to the displayed generic verification error. Fix efbc9dfadc9a33d0c42bde67aee5ff7bb80f7104 marks only explicit company submission as activity. Test update 788edc84cefe08c7030f1c41a991dba0d243975a asserts this contract. Passive refresh remains activity=false. No central authorization, timer, entitlement, credentials, schema or Production deployment changed.
+
+Validation: the updated regression test fails against the old request (1/18 failures), then all 18 API tests pass with the fix; 5 exact-current signing adapter tests pass; 15 existing local MYOPS app-access tests pass. Local pytest unavailable, so suites executed with unittest. Staging Vercel build READY, deployment dpl_8JXvXw2wncnRLdoxbbKSoYsK8Bud. No authenticated staging end-to-end PASS claimed.
+
+Automatic review rejected the native protected URL fetch because it creates/reuses a share link allowing deployment access for up to 23 hours. No alternative access path was attempted. Await owner approval for this temporary staging access before runtime readiness/signed-transport and authenticated verification. Production remains on 231c91c433ac488c54c55a116a746ac244950c32. Read-only Production snapshot after both attempts: profiles=0, companies=0, documents=0. Dashboard after onboarding remains blocked by the live defect; do not mark complete.
 
 Staff invitations and full role/cashier regression remain tracked separately. Deployment availability does not imply every module passed UAT. Payments remain deferred.
