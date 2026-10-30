@@ -72,3 +72,13 @@ test('missing profile without explicit onboarding approval is rejected', async (
   const app = service('https://opsflow.test/launch', undefined, {access_token:'A'.repeat(64),profile:null});
   await assert.rejects(app.redeemMyopsLaunchTicket('T'.repeat(43)));
 });
+
+
+test('logout destination keeps staging isolated and production on MYOPS', () => {
+  for (const host of ['opsflow-staging.vercel.app','opsflow-staging-eiwcenumi-mohd-syaiful-nizam1.vercel.app','opsflow-staging-git-feat-opsflow-ver-f21c05-mohd-syaiful-nizam1.vercel.app']) {
+    assert.equal(service('https://'+host+'/app').myopsPortalUrl(),'https://southerndotcom-website-git-feat-myop-ca0019-mohd-syaiful-nizam1.vercel.app/');
+  }
+  for (const host of ['flow.myops.com.my','opsflow.myops.com.my','opsflow-staging.vercel.app.attacker.test']) {
+    assert.equal(service('https://'+host+'/app').myopsPortalUrl(),'https://www.myops.com.my/');
+  }
+});

@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/src/contexts/AuthContext';
-import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, ViewStyle, StyleProp, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -208,12 +207,11 @@ export function BizFlowSidebar({ items, activeKey, onNavigate }: { items: NavIte
 export function BizFlowTopBar({ title, subtitle, searchValue, onSearchChange, profileName, profileRole, avatarLabel, actions }: { title: string; subtitle?: string; searchValue?: string; onSearchChange?: (value: string) => void; profileName?: string; profileRole?: string; avatarLabel?: string; actions?: React.ReactNode }) {
   const { theme } = useTheme();
   const { logout } = useAuth();
-  const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
   const handleLogout = async () => {
     if (loggingOut) return;
     setLoggingOut(true);
-    try { await logout(); router.replace('/login'); }
+    try { await logout(); }
     finally { setLoggingOut(false); }
   };
   return (

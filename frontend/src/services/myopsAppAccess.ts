@@ -116,3 +116,11 @@ export async function opsflowRequest(path: string, body?: unknown): Promise<any>
   if (!response.ok) throw new Error(result?.detail || 'OpsFlow request failed');
   return result;
 }
+
+// Keep staging users within the existing staging portal; production uses the official domain.
+export function myopsPortalUrl(): string {
+  const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
+  return /^opsflow-staging(?:-[a-z0-9-]+)?\.vercel\.app$/.test(hostname)
+    ? 'https://southerndotcom-website-git-feat-myop-ca0019-mohd-syaiful-nizam1.vercel.app/'
+    : 'https://www.myops.com.my/';
+}
