@@ -19,16 +19,16 @@ const modules = [
 
 export default function CustomerReports() {
   const router = useRouter();
-  const { sales, purchases, products } = useData();
+  const { sales, purchases, products, goodsReceipts } = useData();
   const [search, setSearch] = useState('');
 
   const salesTrend = useMemo(() => salesByDay(sales), [sales]);
   const filteredSales = useMemo(() => sales.filter((sale) => `${sale.saleNumber} ${sale.customerName ?? ''}`.toLowerCase().includes(search.toLowerCase())).slice(0, 6), [sales, search]);
   const totals = useMemo(() => ({
     sales: sales.reduce((sum, sale) => sum + (sale.total || 0), 0),
-    purchases: purchases.reduce((sum, purchase) => sum + (purchase.total || 0), 0),
+    purchases: purchases.reduce((sum, purchase) => sum + (purchase.total || 0), 0) + goodsReceipts.reduce((sum, receipt) => sum + (receipt.totalAmount || 0), 0),
     products: products.length,
-  }), [products.length, purchases, sales]);
+  }), [products.length, purchases, sales, goodsReceipts]);
 
   return (
     <BizFlowDashboardShell
