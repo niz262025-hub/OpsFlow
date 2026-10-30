@@ -2,6 +2,7 @@
 import hashlib
 import json
 import os
+import re
 import secrets
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
@@ -16,11 +17,26 @@ app = FastAPI(title='OpsFlow API')
 bearer = HTTPBearer()
 
 
-def database(path, body=None, method=None):
+STAGING_PROJECT_REF = 'ojamkplflqafedmxbdxb'
+
+
+def database_config():
     origin = os.getenv('OPSFLOW_SUPABASE_URL', '').rstrip('/')
     key = os.getenv('OPSFLOW_SUPABASE_SERVICE_ROLE_KEY', '')
-    if (urlsplit(origin).scheme != 'https' or urlsplit(origin).hostname != 'ojamkplflqafedmxbdxb.supabase.co' or urlsplit(origin).path or not key):
-        raise HTTPException(503, 'OpsFlow database is not configured')
+    production = os.getenv('VERCEL_ENV') == 'production'
+    project_ref = os.getenv('OPSFLOW_SUPABASE_PROJECT_REF', '' if production else STAGING_PROJECT_REF)
+    parsed = urlsplit(origin)
+    if (not re.fullmatch('[a-z]{20}', project_ref)
+        or (production and project_ref == STAGING_PROJECT_REF)
+        or (not production and project_ref != STAGING_PROJECT_REF)
+        or parsed.scheme != 'https' or parsed.netloc != project_ref + '.supabase.co'
+        or parsed.path or parsed.query or parsed.fragment or not key):
+        raise HTTPException(503, 'OpsFlow database is not configured for this environment')
+    return origin, key
+
+
+def database(path, body=None, method=None):
+    origin, key = database_config()
     request = Request(origin + '/rest/v1/' + path,
         data=json.dumps(body).encode() if body is not None else None,
         method=method or ('POST' if body is not None else 'GET'),

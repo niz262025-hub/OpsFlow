@@ -54,6 +54,11 @@ def _load_signing_config() -> tuple[str, str, str, Ed25519PrivateKey]:
     key_version = os.getenv("MYOPS_KEY_VERSION", "current").strip()
     private_pem = os.getenv(f"MYOPS_APP_PRIVATE_KEY_{key_version.upper()}") or os.getenv("MYOPS_APP_PRIVATE_KEY", "")
     parsed = urlsplit(origin)
+    if os.getenv('VERCEL_ENV') == 'production' and (
+        origin.rstrip('/') != 'https://www.myops.com.my'
+        or os.getenv('MYOPS_STAGING_SHARE_TOKEN')
+    ):
+        raise MyopsAccessError('Production must use the live MYOPS authority without staging transport')
     if (
         parsed.scheme != "https"
         or not parsed.netloc

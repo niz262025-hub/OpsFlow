@@ -65,4 +65,23 @@ class VercelApiTests(unittest.TestCase):
   with patch.object(api,'access_context',return_value={'session_id':'session','onboarding_required':True}),patch.object(api,'call_myops',return_value={'entitled':True,'session_active':True}),patch.object(api,'database',return_value={'onboarding_required':True}) as db:
    self.assertEqual(self.client.post('/api/app-access/refresh',headers={'Authorization':'Bearer '+'A'*64},json={}).status_code,200)
    self.assertFalse(db.call_args.args[1]['p_activity'])
+ def test_production_requires_its_own_database_reference(self):
+  base={'VERCEL_ENV':'production','OPSFLOW_SUPABASE_URL':'https://ojamkplflqafedmxbdxb.supabase.co','OPSFLOW_SUPABASE_SERVICE_ROLE_KEY':'dummy'}
+  for ref in ['',api.STAGING_PROJECT_REF]:
+   with patch.dict(api.os.environ,{**base,'OPSFLOW_SUPABASE_PROJECT_REF':ref},clear=True):
+    with self.assertRaises(api.HTTPException): api.database_config()
+ def test_production_database_host_must_match_explicit_reference(self):
+  ref='p'*20
+  base={'VERCEL_ENV':'production','OPSFLOW_SUPABASE_PROJECT_REF':ref,'OPSFLOW_SUPABASE_SERVICE_ROLE_KEY':'dummy'}
+  for origin in ['https://'+ref+'.supabase.co.evil.test','https://'+ref+'.supabase.co?bad=1','https://user:secret@'+ref+'.supabase.co','https://'+ref+'.supabase.co:443','https://ojamkplflqafedmxbdxb.supabase.co']:
+   with patch.dict(api.os.environ,{**base,'OPSFLOW_SUPABASE_URL':origin},clear=True):
+    with self.assertRaises(api.HTTPException): api.database_config()
+  with patch.dict(api.os.environ,{**base,'OPSFLOW_SUPABASE_URL':'https://'+ref+'.supabase.co'},clear=True):
+   self.assertEqual(api.database_config(),('https://'+ref+'.supabase.co','dummy'))
+ def test_preview_cannot_use_the_production_database(self):
+  with patch.dict(api.os.environ,{'VERCEL_ENV':'preview','OPSFLOW_SUPABASE_PROJECT_REF':'p'*20,'OPSFLOW_SUPABASE_URL':'https://'+('p'*20)+'.supabase.co','OPSFLOW_SUPABASE_SERVICE_ROLE_KEY':'dummy'},clear=True):
+   with self.assertRaises(api.HTTPException): api.database_config()
+ def test_existing_staging_configuration_remains_valid(self):
+  with patch.dict(api.os.environ,{'VERCEL_ENV':'preview','OPSFLOW_SUPABASE_URL':'https://'+api.STAGING_PROJECT_REF+'.supabase.co','OPSFLOW_SUPABASE_SERVICE_ROLE_KEY':'dummy'},clear=True):
+   self.assertEqual(api.database_config()[1],'dummy')
 if __name__=='__main__':unittest.main()
