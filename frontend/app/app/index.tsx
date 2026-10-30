@@ -28,13 +28,13 @@ const quickActions = [
 export default function CustomerDashboard() {
   const router = useRouter();
   const { profile } = useAuth();
-  const { company, products, sales, purchases, cashEntries } = useData();
+  const { company, products, sales, purchaseOrders: orders, cashEntries } = useData();
   const [search, setSearch] = useState('');
 
   const stats = useMemo(() => {
     const salesTrend = salesByDay(sales);
     const todaySales = salesTrend.today;
-    const purchaseOrders = purchases.reduce((sum, purchase) => sum + (purchase.total || 0), 0);
+    const purchaseOrders = orders.reduce((sum, purchase) => sum + (purchase.total || 0), 0);
     const lowStockItems = products.filter((product) => product.stock <= (product.minStock || 10));
     const cashBalance = cashLedgerBalance(cashEntries);
 
@@ -45,7 +45,7 @@ export default function CustomerDashboard() {
       cashBalance,
       salesTrend,
     };
-  }, [cashEntries, products, purchases, sales]);
+  }, [cashEntries, products, orders, sales]);
 
   return (
     <BizFlowDashboardShell
@@ -63,9 +63,9 @@ export default function CustomerDashboard() {
       <View style={styles.content}>
         <View style={styles.kpiGrid}>
           <BizFlowKpiCard label="Today Sales" value={formatMYR(stats.todaySales)} detail="Live from POS" />
-          <BizFlowKpiCard label="Purchase Orders" value={formatMYR(stats.purchaseOrders)} detail="Suppliers this week" />
+          <BizFlowKpiCard label="Purchase Orders" value={formatMYR(stats.purchaseOrders)} detail="Purchase order value" />
           <BizFlowKpiCard label="Low Stock" value={`${stats.lowStockItems.length}`} detail="Items need restock" tone="warning" />
-          <BizFlowKpiCard label="Cash Balance" value={formatMYR(stats.cashBalance)} detail="Bank and cash" tone="success" />
+          <BizFlowKpiCard label="Cash Balance" value={formatMYR(stats.cashBalance)} detail="Cash ledger balance" tone="success" />
         </View>
 
         <View style={styles.grid}>
