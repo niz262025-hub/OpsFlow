@@ -1,4 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { useAuth } from '@/src/contexts/AuthContext';
+import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, ViewStyle, StyleProp, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -205,6 +207,15 @@ export function BizFlowSidebar({ items, activeKey, onNavigate }: { items: NavIte
 
 export function BizFlowTopBar({ title, subtitle, searchValue, onSearchChange, profileName, profileRole, avatarLabel, actions }: { title: string; subtitle?: string; searchValue?: string; onSearchChange?: (value: string) => void; profileName?: string; profileRole?: string; avatarLabel?: string; actions?: React.ReactNode }) {
   const { theme } = useTheme();
+  const { logout } = useAuth();
+  const router = useRouter();
+  const [loggingOut, setLoggingOut] = useState(false);
+  const handleLogout = async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try { await logout(); router.replace('/login'); }
+    finally { setLoggingOut(false); }
+  };
   return (
     <View style={styles.topBar}> 
       <View style={{ flex: 1 }}>
@@ -218,6 +229,7 @@ export function BizFlowTopBar({ title, subtitle, searchValue, onSearchChange, pr
         </View>
       ) : null}
       {actions}
+      <BizFlowButton title={loggingOut ? 'Logging out…' : 'Logout'} icon="logout" variant="secondary" disabled={loggingOut} onPress={handleLogout} />
       {(profileName || profileRole) ? (
         <View style={[styles.profileChip, { backgroundColor: '#FFFFFF', borderColor: '#E2E8F0' }]}> 
           <View style={[styles.profileAvatar, { backgroundColor: '#EEEAF6' }]}> 
