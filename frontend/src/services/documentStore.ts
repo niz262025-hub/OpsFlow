@@ -82,11 +82,12 @@ export function onSnapshot(target: Query | DocumentReference, next: (s: any) => 
 }
 function batch() {
   const operations: any[] = [];
+  const request_id = crypto.randomUUID();
   return {
     set: (ref: DocumentReference, data: unknown, options?: { merge?: boolean }) => { operations.push({ ...ref, kind: 'set', data, merge: options?.merge || false }); },
     update: (ref: DocumentReference, data: unknown) => { operations.push({ ...ref, kind: 'update', data }); },
     delete: (ref: DocumentReference) => { operations.push({ ...ref, kind: 'delete' }); },
-    commit: async (reads: any[] = []) => request('commit', { operations, reads }),
+    commit: async (reads: any[] = []) => request('commit', { operations, reads, request_id }),
   };
 }
 export const writeBatch = (_db: unknown) => batch();

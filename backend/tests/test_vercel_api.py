@@ -124,10 +124,20 @@ class TrialWriteSafetyTests(unittest.TestCase):
   import os
   with patch.dict(os.environ,{'VERCEL_ENV':'preview','OPSFLOW_TRIAL_ENFORCEMENT':'true'}),patch.object(api,'session_context',return_value={'session_id':'bound','companyId':'company'}),patch.object(api,'call_myops',return_value={'entitled':True,'session_active':True,'access_mode':'trial'}) as central,patch.object(api,'database') as db:
    result=TestClient(api.app).post('/api/data',headers={'Authorization':'Bearer '+'A'*64},json={'action':'commit','payload':{'operations':[]}})
-   self.assertEqual(result.status_code,503);db.assert_not_called()
+   self.assertEqual(result.status_code,403);db.assert_not_called()
    self.assertEqual([c.args[0] for c in central.call_args_list],['/api/app/entitlement'])
  def test_verified_paid_path_still_commits(self):
   import os
   with patch.dict(os.environ,{'VERCEL_ENV':'preview','OPSFLOW_TRIAL_ENFORCEMENT':'true'}),patch.object(api,'session_context',return_value={'session_id':'bound','companyId':'company'}),patch.object(api,'call_myops',return_value={'entitled':True,'session_active':True,'access_mode':'paid'}),patch.object(api,'database',return_value={'committed':True}) as db:
    result=TestClient(api.app).post('/api/data',headers={'Authorization':'Bearer '+'A'*64},json={'action':'commit','payload':{'operations':[]}})
    self.assertEqual(result.status_code,200);self.assertEqual(db.call_args.args[0],'rpc/opsflow_document_gateway')
+
+class AtomicTrialRouteTests(unittest.TestCase):
+ def test_trial_metadata_is_server_bound_and_atomic_gateway_used(self):
+  import os
+  trial={'id':'dddddddd-dddd-4ddd-8ddd-dddddddddddd','policy_version':1,'expires_at':'2099-01-01T00:00:00Z'}
+  payload={'request_id':'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee','operations':[]}
+  with patch.dict(os.environ,{'VERCEL_ENV':'preview','OPSFLOW_TRIAL_ENFORCEMENT':'true'}),patch.object(api,'session_context',return_value={'session_id':'bound','companyId':'company'}),patch.object(api,'call_myops',return_value={'entitled':True,'session_active':True,'access_mode':'trial','trial':trial}),patch.object(api,'database',return_value={'committed':True}) as db:
+   result=TestClient(api.app).post('/api/data',headers={'Authorization':'Bearer '+'A'*64},json={'action':'commit','payload':payload})
+   self.assertEqual(result.status_code,200);self.assertEqual(db.call_args.args[0],'rpc/opsflow_trial_document_gateway')
+   self.assertEqual(db.call_args.args[1]['p_trial_id'],trial['id']);self.assertNotIn('request_id',db.call_args.args[1]['p_payload'])

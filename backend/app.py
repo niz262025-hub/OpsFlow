@@ -5,6 +5,8 @@ import logging
 import os
 import re
 import secrets
+from uuid import UUID
+from datetime import datetime, timezone
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
@@ -245,10 +247,21 @@ async def data(body: DocumentRequest, digest: str = Depends(token_hash)):
                 raise HTTPException(403, 'MYOPS access is no longer active')
             # Require an explicit central mode; never infer paid access from absence.
             if access.get('access_mode') == 'trial':
-                # Cross-service quota consumption before commit can burn units on
-                # rollback or race with compensation. Do not enable until the
-                # usage receipt and document write are committed atomically.
-                raise HTTPException(503, 'Trial writes are awaiting atomic quota integration')
+                trial = access.get('trial')
+                try:
+                    if not isinstance(trial, dict) or trial.get('policy_version') != 1:
+                        raise ValueError('Missing verified trial policy')
+                    trial_id = str(UUID(trial['id']))
+                    request_id = str(UUID(body.payload['request_id']))
+                    expires = datetime.fromisoformat(trial['expires_at'].replace('Z','+00:00'))
+                    if expires.tzinfo is None or expires <= datetime.now(timezone.utc):
+                        raise ValueError('Expired trial')
+                except (ValueError, KeyError, TypeError, AttributeError):
+                    raise HTTPException(403, 'Verified active trial and operation required') from None
+                return await run_in_threadpool(database, 'rpc/opsflow_trial_document_gateway', {
+                    'p_token_hash': digest, 'p_trial_id': trial_id, 'p_expires_at': trial['expires_at'],
+                    'p_request_id': request_id,
+                    'p_payload': {key: value for key, value in body.payload.items() if key != 'request_id'}})
             elif access.get('access_mode') != 'paid':
                 raise HTTPException(503, 'Central access mode is unavailable')
         except MyopsAccessError:
