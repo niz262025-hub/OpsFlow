@@ -14,8 +14,6 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from myops_app_access import call_myops, validate_redeem_response, is_launch_ticket, MyopsAccessError
 
-from trial_writes import enforce_trial_writes
-
 app = FastAPI(title='OpsFlow API')
 bearer = HTTPBearer()
 
@@ -247,7 +245,10 @@ async def data(body: DocumentRequest, digest: str = Depends(token_hash)):
                 raise HTTPException(403, 'MYOPS access is no longer active')
             # Require an explicit central mode; never infer paid access from absence.
             if access.get('access_mode') == 'trial':
-                await run_in_threadpool(enforce_trial_writes, context, body.payload)
+                # Cross-service quota consumption before commit can burn units on
+                # rollback or race with compensation. Do not enable until the
+                # usage receipt and document write are committed atomically.
+                raise HTTPException(503, 'Trial writes are awaiting atomic quota integration')
             elif access.get('access_mode') != 'paid':
                 raise HTTPException(503, 'Central access mode is unavailable')
         except MyopsAccessError:

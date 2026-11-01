@@ -118,3 +118,16 @@ class VercelApiTests(unittest.TestCase):
     if key.startswith('sb_secret_'): self.assertIsNone(request.get_header('Authorization'))
     else: self.assertEqual(request.get_header('Authorization'),'Bearer '+key)
 if __name__=='__main__':unittest.main()
+
+class TrialWriteSafetyTests(unittest.TestCase):
+ def test_unfinished_trial_path_neither_consumes_nor_writes(self):
+  import os
+  with patch.dict(os.environ,{'VERCEL_ENV':'preview','OPSFLOW_TRIAL_ENFORCEMENT':'true'}),patch.object(api,'session_context',return_value={'session_id':'bound','companyId':'company'}),patch.object(api,'call_myops',return_value={'entitled':True,'session_active':True,'access_mode':'trial'}) as central,patch.object(api,'database') as db:
+   result=TestClient(api.app).post('/api/data',headers={'Authorization':'Bearer '+'A'*64},json={'action':'commit','payload':{'operations':[]}})
+   self.assertEqual(result.status_code,503);db.assert_not_called()
+   self.assertEqual([c.args[0] for c in central.call_args_list],['/api/app/entitlement'])
+ def test_verified_paid_path_still_commits(self):
+  import os
+  with patch.dict(os.environ,{'VERCEL_ENV':'preview','OPSFLOW_TRIAL_ENFORCEMENT':'true'}),patch.object(api,'session_context',return_value={'session_id':'bound','companyId':'company'}),patch.object(api,'call_myops',return_value={'entitled':True,'session_active':True,'access_mode':'paid'}),patch.object(api,'database',return_value={'committed':True}) as db:
+   result=TestClient(api.app).post('/api/data',headers={'Authorization':'Bearer '+'A'*64},json={'action':'commit','payload':{'operations':[]}})
+   self.assertEqual(result.status_code,200);self.assertEqual(db.call_args.args[0],'rpc/opsflow_document_gateway')
