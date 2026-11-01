@@ -14,6 +14,8 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from myops_app_access import call_myops, validate_redeem_response, is_launch_ticket, MyopsAccessError
 
+from trial_writes import enforce_trial_writes
+
 app = FastAPI(title='OpsFlow API')
 bearer = HTTPBearer()
 
@@ -234,6 +236,22 @@ async def complete_onboarding(body: CompanyOnboarding, digest: str = Depends(tok
 async def data(body: DocumentRequest, digest: str = Depends(token_hash)):
     if body.action not in ('get', 'list', 'commit'):
         raise HTTPException(400, 'Unsupported operation')
+    if body.action == 'commit' and os.getenv('OPSFLOW_TRIAL_ENFORCEMENT') == 'true':
+        if os.getenv('VERCEL_ENV') != 'preview':
+            raise HTTPException(503, 'Trial write configuration is staging-only')
+        context = await run_in_threadpool(session_context, digest)
+        try:
+            access = await run_in_threadpool(call_myops, '/api/app/entitlement', {
+                'session_id': context['session_id'], 'product': 'opsflow', 'activity': False, 'sensitive': False})
+            if access.get('entitled') is not True or access.get('session_active') is not True:
+                raise HTTPException(403, 'MYOPS access is no longer active')
+            # Require an explicit central mode; never infer paid access from absence.
+            if access.get('access_mode') == 'trial':
+                await run_in_threadpool(enforce_trial_writes, context, body.payload)
+            elif access.get('access_mode') != 'paid':
+                raise HTTPException(503, 'Central access mode is unavailable')
+        except MyopsAccessError:
+            raise HTTPException(403, 'Trial limit reached or access unavailable; check MYOPS') from None
     return await run_in_threadpool(database, 'rpc/opsflow_document_gateway', {
         'p_token_hash': digest, 'p_action': body.action, 'p_payload': body.payload})
 
