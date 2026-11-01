@@ -8,7 +8,7 @@ type OnboardingAccess = { onboarding_required: true };
 type User = { uid: string; email: string };
 interface AuthCtx {
  user: User | null; profile: UserProfile | null; loading: boolean; onboardingRequired: boolean;
- completeOnboarding: (companyName:string,displayName:string)=>Promise<void>;
+ completeOnboarding: ()=>Promise<void>;
  register: (email: string,password: string,displayName: string,companyName?: string,onStatusChange?: (message: string)=>void)=>Promise<void>;
  login: (email: string,password: string,companyName?: string,rememberMe?: boolean)=>Promise<void>;
  forgotPassword: (email: string)=>Promise<void>; logout: ()=>Promise<void>; refreshProfile: ()=>Promise<void>;
@@ -46,7 +46,7 @@ export function AuthProvider({children}:{children:React.ReactNode}) {
   const timer=setInterval(()=>{if(busy)return;void(async()=>{busy=true;try{if(Date.now()-lastActivity>=15*60_000){await logout();return;}const token=await storage.secureGet<string|null>(OPSFLOW_API_TOKEN_KEY,null);const sent=lastActivity;if(!token||!await refreshMyopsSession(token,sent>lastSent))await logout();else lastSent=sent;}finally{busy=false;}})();},10_000);
   return()=>{clearInterval(timer);events.forEach(name=>document.removeEventListener(name,activity));};
  },[logout,user?.uid,onboardingRequired]);
- const completeOnboarding=useCallback(async(companyName:string,displayName:string)=>{adopt(await opsflowRequest('/api/onboarding/company',{company_name:companyName.trim(),display_name:displayName.trim()}));},[adopt]);
+ const completeOnboarding=useCallback(async()=>{adopt(await opsflowRequest('/api/onboarding/company',{}));},[adopt]);
  const central=useCallback(async()=>{await Linking.openURL('https://www.myops.com.my/');},[]);
  const login=useCallback(async()=>{await central();throw new Error('Sign in through MYOPS');},[central]);
  const register=useCallback(async()=>{await central();throw new Error('Register through MYOPS');},[central]);

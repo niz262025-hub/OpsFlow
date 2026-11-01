@@ -96,8 +96,19 @@ class Refresh(BaseModel):
 
 
 class CompanyOnboarding(BaseModel):
-    company_name: str = Field(min_length=1, max_length=200)
-    display_name: str = Field(min_length=1, max_length=100)
+    model_config = {'extra': 'forbid'}
+
+
+def central_profile(reply):
+    profile = reply.get('onboarding_profile')
+    if not isinstance(profile, dict):
+        return None
+    name, company = profile.get('display_name'), profile.get('company_name')
+    if not isinstance(name, str) or not 1 <= len(name.strip()) <= 100:
+        return None
+    if not isinstance(company, str) or not 1 <= len(company.strip()) <= 200:
+        return None
+    return {'p_display_name': name.strip(), 'p_company_name': company.strip()}
 
 
 class DocumentRequest(BaseModel):
@@ -152,6 +163,13 @@ async def redeem(body: Ticket):
             'p_user_ref': redeemed['user_ref'], 'p_session_id': redeemed['session_id']})
         if not pending:
             raise HTTPException(403, 'OpsFlow membership requires administrator assistance')
+        labels = central_profile(reply)
+        if labels:
+            profile = await run_in_threadpool(database, 'rpc/opsflow_onboarding', {
+                'p_action': 'complete', 'p_token_hash': digest, **labels})
+            if not profile:
+                raise HTTPException(401, 'Reopen OpsFlow from MYOPS')
+            return {'access_token': token, 'profile': profile, 'onboarding_required': False}
         return {'access_token': token, 'profile': None, 'onboarding_required': True}
     return {'access_token': token, 'profile': context, 'onboarding_required': False}
 
@@ -202,9 +220,11 @@ async def complete_onboarding(body: CompanyOnboarding, digest: str = Depends(tok
     if reply.get('entitled') is not True or reply.get('session_active') is not True:
         await run_in_threadpool(close_access, digest)
         raise HTTPException(403, 'MYOPS access is no longer active')
+    labels = central_profile(reply)
+    if not labels:
+        raise HTTPException(409, 'Lengkapkan nama dan syarikat di akaun MYOPS dahulu.')
     profile = await run_in_threadpool(database, 'rpc/opsflow_onboarding', {
-        'p_action': 'complete', 'p_token_hash': digest,
-        'p_company_name': body.company_name, 'p_display_name': body.display_name})
+        'p_action': 'complete', 'p_token_hash': digest, **labels})
     if not profile:
         raise HTTPException(401, 'Onboarding session expired; reopen OpsFlow from MYOPS')
     return profile

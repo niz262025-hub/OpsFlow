@@ -48,19 +48,43 @@ class VercelApiTests(unittest.TestCase):
    self.assertTrue(response.json()['onboarding_required']);self.assertIsNone(response.json()['profile'])
  def test_onboarding_revalidates_central_before_database_write(self):
   with patch.object(api,'access_context',return_value={'session_id':'session','onboarding_required':True}),patch.object(api,'call_myops',return_value={'entitled':False,'session_active':False}),patch.object(api,'database') as db:
-   response=self.client.post('/api/onboarding/company',headers={'Authorization':'Bearer '+'A'*64},json={'company_name':'Test','display_name':'Owner'})
+   response=self.client.post('/api/onboarding/company',headers={'Authorization':'Bearer '+'A'*64},json={})
    self.assertEqual(response.status_code,403)
    self.assertFalse(any(c.args[0]=='rpc/opsflow_onboarding' and c.args[1].get('p_action')=='complete' for c in db.call_args_list))
  def test_onboarding_transport_failure_does_not_create_company(self):
   with patch.object(api,'access_context',return_value={'session_id':'session'}),patch.object(api,'call_myops',side_effect=api.MyopsAccessError('unavailable')),patch.object(api,'database') as db:
-   response=self.client.post('/api/onboarding/company',headers={'Authorization':'Bearer '+'A'*64},json={'company_name':'Test','display_name':'Owner'})
+   response=self.client.post('/api/onboarding/company',headers={'Authorization':'Bearer '+'A'*64},json={})
    self.assertEqual(response.status_code,503);db.assert_not_called()
  def test_onboarding_uses_only_server_bound_identity(self):
-  with patch.object(api,'access_context',return_value={'session_id':'session'}),patch.object(api,'call_myops',return_value={'entitled':True,'session_active':True}) as central,patch.object(api,'database',return_value={'uid':'owner','companyId':'new','role':'admin'}) as db:
-   response=self.client.post('/api/onboarding/company',headers={'Authorization':'Bearer '+'A'*64},json={'company_name':'Test','display_name':'Owner','user_ref':'attacker','company_id':'other','role':'cashier'})
+  with patch.object(api,'access_context',return_value={'session_id':'session'}),patch.object(api,'call_myops',return_value={'entitled':True,'session_active':True,'onboarding_profile':{'display_name':'Central Owner','company_name':'Central Company'}}) as central,patch.object(api,'database',return_value={'uid':'owner','companyId':'new','role':'admin'}) as db:
+   response=self.client.post('/api/onboarding/company',headers={'Authorization':'Bearer '+'A'*64},json={})
    self.assertEqual(response.status_code,200)
    self.assertEqual(set(db.call_args.args[1]),{'p_action','p_token_hash','p_company_name','p_display_name'})
+   self.assertEqual(db.call_args.args[1]['p_company_name'],'Central Company')
+   self.assertEqual(db.call_args.args[1]['p_display_name'],'Central Owner')
    self.assertTrue(central.call_args.args[1]['sensitive']);self.assertTrue(central.call_args.args[1]['activity'])
+ def test_browser_cannot_supply_company_identity_or_roles(self):
+  with patch.object(api,'call_myops') as central,patch.object(api,'database') as db:
+   response=self.client.post('/api/onboarding/company',headers={'Authorization':'Bearer '+'A'*64},json={'company_name':'Forged','display_name':'Fake','role':'admin'})
+   self.assertEqual(response.status_code,422);central.assert_not_called();db.assert_not_called()
+ def test_launch_automatically_provisions_from_central_labels(self):
+  reply={'product':'opsflow','user_ref':'U'*43,'session_id':'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','onboarding_profile':{'display_name':'Central Owner','company_name':'Central Company'}}
+  profile={'uid':'existing','companyId':'company','role':'admin'}
+  with patch.object(api,'call_myops',return_value=reply),patch.object(api,'database',side_effect=[None,{'onboarding_required':True},profile]) as db:
+   result=self.client.post('/api/app-access/redeem',json={'ticket':'T'*43})
+   self.assertEqual(result.status_code,200);self.assertFalse(result.json()['onboarding_required'])
+   self.assertEqual(result.json()['profile'],profile)
+   self.assertEqual(db.call_args.args[1]['p_company_name'],'Central Company')
+ def test_existing_company_is_reused_without_overwriting_or_creating(self):
+  reply={'product':'opsflow','user_ref':'U'*43,'session_id':'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','onboarding_profile':{'display_name':'New name','company_name':'New label'}}
+  profile={'uid':'existing','companyId':'existing-company','role':'admin'}
+  with patch.object(api,'call_myops',return_value=reply),patch.object(api,'database',return_value=profile) as db:
+   result=self.client.post('/api/app-access/redeem',json={'ticket':'T'*43})
+   self.assertEqual(result.json()['profile'],profile);db.assert_called_once()
+ def test_missing_central_company_never_creates_a_tenant(self):
+  with patch.object(api,'access_context',return_value={'session_id':'session'}),patch.object(api,'call_myops',return_value={'entitled':True,'session_active':True,'onboarding_profile':None}),patch.object(api,'database') as db:
+   result=self.client.post('/api/onboarding/company',headers={'Authorization':'Bearer '+'A'*64},json={})
+   self.assertEqual(result.status_code,409);db.assert_not_called()
  def test_pending_passive_refresh_is_not_activity(self):
   with patch.object(api,'access_context',return_value={'session_id':'session','onboarding_required':True}),patch.object(api,'call_myops',return_value={'entitled':True,'session_active':True}),patch.object(api,'database',return_value={'onboarding_required':True}) as db:
    self.assertEqual(self.client.post('/api/app-access/refresh',headers={'Authorization':'Bearer '+'A'*64},json={}).status_code,200)
