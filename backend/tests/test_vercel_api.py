@@ -1,4 +1,7 @@
 import sys
+import io
+import json
+from urllib.error import HTTPError
 from pathlib import Path
 import unittest
 from unittest.mock import patch, MagicMock
@@ -141,3 +144,12 @@ class AtomicTrialRouteTests(unittest.TestCase):
    result=TestClient(api.app).post('/api/data',headers={'Authorization':'Bearer '+'A'*64},json={'action':'commit','payload':payload})
    self.assertEqual(result.status_code,200);self.assertEqual(db.call_args.args[0],'rpc/opsflow_trial_document_gateway')
    self.assertEqual(db.call_args.args[1]['p_trial_id'],trial['id']);self.assertNotIn('request_id',db.call_args.args[1]['p_payload'])
+
+class TrialErrorTests(unittest.TestCase):
+ def test_quota_error_is_safe_and_specific(self):
+  for message, expected in [('Trial usage limit reached',403),('private database detail',409)]:
+   error=HTTPError('https://example.invalid',400,'Bad Request',{},io.BytesIO(json.dumps({'code':'P0001','message':message}).encode()))
+   with patch.object(api,'database_config',return_value=('https://example.invalid','sb_secret_dummy')),patch.object(api,'urlopen',side_effect=error):
+    with self.assertRaises(api.HTTPException) as raised: api.database('rpc/opsflow_trial_document_gateway',{})
+    self.assertEqual(raised.exception.status_code,expected)
+    self.assertNotIn('private database detail',raised.exception.detail)

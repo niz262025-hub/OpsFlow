@@ -53,6 +53,13 @@ def database(path, body=None, method=None):
             return json.loads(raw) if raw else None
     except HTTPError as error:
         logging.getLogger('opsflow').warning('opsflow_database_http_error status=%s', error.code)
+        if error.code == 400 and path == 'rpc/opsflow_trial_document_gateway':
+            try:
+                failure = json.loads(error.read())
+            except (ValueError, OSError):
+                failure = {}
+            if failure.get('code') == 'P0001' and failure.get('message') == 'Trial usage limit reached':
+                raise HTTPException(403, 'Trial limit reached: maximum 30 transaction records and 2 purchase-order workflows. Upgrade your plan in MYOPS to continue.') from None
         # Never return upstream bodies, database details or service credentials.
         if error.code == 400:
             raise HTTPException(409, 'Operation rejected; refresh and retry') from None

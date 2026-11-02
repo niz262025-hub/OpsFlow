@@ -62,7 +62,7 @@ export default function CustomerPos() {
       setCart({});
       setStatusMessage(`Checkout complete via ${paymentMethod}.`);
     } catch (error) {
-      setStatusMessage('Checkout failed. Please try again.');
+      setStatusMessage(error instanceof Error ? error.message : 'Checkout failed. Please try again.');
     }
   };
 
