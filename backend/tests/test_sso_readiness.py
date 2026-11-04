@@ -6,6 +6,14 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from fastapi.testclient import TestClient
 import app as api
 class SsoReadinessTests(unittest.TestCase):
+ def test_preview_diagnostic_exposes_only_a_safe_failure_category(self):
+  error=api.MyopsAccessError('credential-or-private-payload')
+  error.__cause__=TimeoutError('credential-or-private-payload')
+  with patch.dict('os.environ',{'VERCEL_ENV':'preview'}),patch.object(api,'call_myops',side_effect=error):
+   response=TestClient(api.app).get('/api/sso-ready')
+  self.assertEqual(response.status_code,503)
+  self.assertEqual(response.headers['x-myops-readiness-reason'],'timeout')
+  self.assertNotIn('credential-or-private-payload',response.text+str(response.headers))
  def test_only_expected_unknown_session_denial_proves_transport(self):
   with patch.dict('os.environ',{'VERCEL_ENV':'preview'}),patch.object(api,'call_myops',return_value={'entitled':False,'session_active':False}):
    self.assertEqual(TestClient(api.app).get('/api/sso-ready').status_code,200)
