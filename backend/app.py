@@ -145,8 +145,19 @@ async def sso_readiness():
         result = await run_in_threadpool(call_myops, '/api/app/entitlement', {
             'session_id': '00000000-0000-4000-8000-000000000001',
             'product': 'opsflow', 'activity': False, 'sensitive': False})
-    except MyopsAccessError:
-        raise HTTPException(503, 'MYOPS signed transport is unavailable') from None
+    except MyopsAccessError as error:
+        # Preview-only readiness diagnostics: expose a bounded category, never URLs,
+        # credentials, signed payloads or raw exception messages.
+        cause = error.__cause__
+        if isinstance(cause, HTTPError):
+            reason = f'upstream_http_{cause.code}'
+        elif isinstance(cause, TimeoutError) or (isinstance(cause, URLError) and isinstance(cause.reason, TimeoutError)):
+            reason = 'timeout'
+        elif str(error) in {'MYOPS app access is not configured', 'MYOPS signing key is invalid', 'MYOPS signing key must be Ed25519'}:
+            reason = 'configuration'
+        else:
+            reason = 'transport_unavailable'
+        raise HTTPException(503, 'MYOPS signed transport is unavailable', headers={'X-MYOPS-Readiness-Reason': reason}) from None
     if result.get('entitled') is False and result.get('session_active') is False and 'error' not in result:
         return {'ready': True, 'signed_transport': 'verified', 'unknown_session': 'denied'}
     raise HTTPException(503, 'MYOPS signed transport could not be verified')
