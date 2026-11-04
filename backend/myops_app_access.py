@@ -118,7 +118,7 @@ def preview_opener(origin):
         raise MyopsAccessError("Staging transport is restricted to Vercel previews")
     client = build_opener(HTTPCookieProcessor(CookieJar()), SameOriginRedirect(origin))
     # Only the Vercel layer receives this temporary token. App requests still require signatures.
-    with client.open(Request(origin + "/?" + urlencode({"_vercel_share": token})), timeout=8):
+    with client.open(Request(origin + "/?" + urlencode({"_vercel_share": token})), timeout=20):
         pass
     return client.open
 
@@ -133,7 +133,7 @@ def call_myops(path: str, body: dict[str, Any], *, opener: Callable[..., Any] | 
     )
     try:
         send = opener or preview_opener(origin)
-        with send(request, timeout=8) as response:
+        with send(request, timeout=20 if os.getenv('VERCEL_ENV') == 'preview' else 8) as response:
             payload = json.loads(response.read())
             if not isinstance(payload, dict):
                 raise MyopsAccessError("MYOPS returned an invalid response")
