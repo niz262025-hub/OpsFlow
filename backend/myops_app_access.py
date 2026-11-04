@@ -9,10 +9,11 @@ import os
 import re
 import secrets
 import time
+from http.cookiejar import CookieJar
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlsplit
-from urllib.request import Request, urlopen
+from urllib.parse import urlsplit, urlencode
+from urllib.request import Request, urlopen, build_opener, HTTPCookieProcessor, HTTPRedirectHandler
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -21,7 +22,7 @@ APP_ID_RE = re.compile(r"^[a-z][a-z0-9_-]{1,31}$")
 TICKET_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", re.I)
 USER_REF_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
-MYOPS_PATHS = {"/api/app/redeem", "/api/app/entitlement"}
+MYOPS_PATHS = {"/api/app/redeem", "/api/app/entitlement", "/api/app/trial-quota"}
 
 
 class MyopsAccessError(Exception):
@@ -53,6 +54,11 @@ def _load_signing_config() -> tuple[str, str, str, Ed25519PrivateKey]:
     key_version = os.getenv("MYOPS_KEY_VERSION", "current").strip()
     private_pem = os.getenv(f"MYOPS_APP_PRIVATE_KEY_{key_version.upper()}") or os.getenv("MYOPS_APP_PRIVATE_KEY", "")
     parsed = urlsplit(origin)
+    if os.getenv('VERCEL_ENV') == 'production' and (
+        origin.rstrip('/') != 'https://www.myops.com.my'
+        or os.getenv('MYOPS_STAGING_SHARE_TOKEN')
+    ):
+        raise MyopsAccessError('Production must use the live MYOPS authority without staging transport')
     if (
         parsed.scheme != "https"
         or not parsed.netloc
@@ -91,7 +97,33 @@ def signed_headers(path: str, body: dict[str, Any], *, now_ms: int | None = None
     }
 
 
-def call_myops(path: str, body: dict[str, Any], *, opener: Callable[..., Any] = urlopen) -> dict[str, Any]:
+class SameOriginRedirect(HTTPRedirectHandler):
+    def __init__(self, origin):
+        super().__init__()
+        self.origin = origin
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        parsed = urlsplit(newurl)
+        if f"{parsed.scheme}://{parsed.netloc}" != self.origin:
+            raise MyopsAccessError("MYOPS transport redirect rejected")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def preview_opener(origin):
+    token = os.getenv("MYOPS_STAGING_SHARE_TOKEN", "").strip()
+    if not token:
+        return urlopen
+    parsed = urlsplit(origin)
+    if os.getenv("VERCEL_ENV") != "preview" or parsed.scheme != "https" or not parsed.hostname.endswith(".vercel.app"):
+        raise MyopsAccessError("Staging transport is restricted to Vercel previews")
+    client = build_opener(HTTPCookieProcessor(CookieJar()), SameOriginRedirect(origin))
+    # Only the Vercel layer receives this temporary token. App requests still require signatures.
+    with client.open(Request(origin + "/?" + urlencode({"_vercel_share": token})), timeout=20):
+        pass
+    return client.open
+
+
+def call_myops(path: str, body: dict[str, Any], *, opener: Callable[..., Any] | None = None) -> dict[str, Any]:
     origin, _, _, _ = _load_signing_config()
     request = Request(
         f"{origin}{path}",
@@ -100,7 +132,8 @@ def call_myops(path: str, body: dict[str, Any], *, opener: Callable[..., Any] = 
         method="POST",
     )
     try:
-        with opener(request, timeout=8) as response:
+        send = opener or preview_opener(origin)
+        with send(request, timeout=20 if os.getenv('VERCEL_ENV') == 'preview' else 8) as response:
             payload = json.loads(response.read())
             if not isinstance(payload, dict):
                 raise MyopsAccessError("MYOPS returned an invalid response")
@@ -131,3 +164,26 @@ def validate_redeem_response(payload: Any) -> dict[str, str]:
     ):
         raise MyopsAccessError("MYOPS launch is not authorized for OpsFlow")
     return {"session_id": session_id, "user_ref": user_ref, "product": "opsflow"}
+
+
+def consume_trial_quota(session_id: str, feature: str, operation_id: str, *, send=None) -> dict[str, Any]:
+    """Trial-only server call. Session id comes from the stored local session.
+
+    The caller must enforce its tenant and reuse a server-owned operation UUID.
+    Never apply this to paid access or activate trials before write integration.
+    """
+    if os.getenv('VERCEL_ENV') != 'preview':
+        raise MyopsAccessError('Trial quota integration is staging-only')
+    if not isinstance(session_id, str) or not UUID_RE.fullmatch(session_id):
+        raise MyopsAccessError('Verified app session required')
+    if feature not in {'transactions', 'workflows'} or not isinstance(operation_id, str) or not UUID_RE.fullmatch(operation_id):
+        raise MyopsAccessError('Invalid trial operation')
+    reply = (send or call_myops)('/api/app/trial-quota', {
+        'session_id': session_id, 'product': 'opsflow', 'feature': feature, 'operation_id': operation_id})
+    if not isinstance(reply, dict) or reply.get('allowed') is not True:
+        raise MyopsAccessError('Trial operation is not authorized')
+    used, limit = reply.get('used'), reply.get('limit')
+    expected_limit = 30 if feature == 'transactions' else 2
+    if type(used) is not int or not 1 <= used <= expected_limit or type(limit) is not int or limit != expected_limit or type(reply.get('replayed')) is not bool:
+        raise MyopsAccessError('Invalid trial quota response')
+    return {'allowed': True, 'used': used, 'limit': limit, 'replayed': reply['replayed']}

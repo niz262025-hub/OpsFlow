@@ -3,6 +3,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { useData } from '@/src/contexts/DataContext';
+import { salesByDay, cashLedgerBalance } from '@/src/utils/dashboardTotals';
 import { formatMYR } from '@/src/utils/currency';
 import { BizFlowButton, BizFlowChart, BizFlowDashboardShell, BizFlowKpiCard, BizFlowSectionCard, BizFlowStatusChip, BizFlowTable } from '@/src/components/designSystem';
 
@@ -27,15 +28,15 @@ const quickActions = [
 export default function CustomerDashboard() {
   const router = useRouter();
   const { profile } = useAuth();
-  const { company, products, sales, purchases, expenses } = useData();
+  const { company, products, sales, purchaseOrders: orders, cashEntries } = useData();
   const [search, setSearch] = useState('');
 
   const stats = useMemo(() => {
-    const todaySales = sales.reduce((sum, sale) => sum + (sale.total || 0), 0);
-    const purchaseOrders = purchases.reduce((sum, purchase) => sum + (purchase.total || 0), 0);
+    const salesTrend = salesByDay(sales);
+    const todaySales = salesTrend.today;
+    const purchaseOrders = orders.reduce((sum, purchase) => sum + (purchase.total || 0), 0);
     const lowStockItems = products.filter((product) => product.stock <= (product.minStock || 10));
-    const cashBalance = expenses.reduce((sum, expense) => sum + (expense.amount || 0), 0);
-    const salesTrend = [42, 58, 49, 61, 72, 69, 88];
+    const cashBalance = cashLedgerBalance(cashEntries);
 
     return {
       todaySales,
@@ -44,14 +45,14 @@ export default function CustomerDashboard() {
       cashBalance,
       salesTrend,
     };
-  }, [expenses, products, purchases, sales]);
+  }, [cashEntries, products, orders, sales]);
 
   return (
     <BizFlowDashboardShell
       sidebarItems={modules}
       activeKey="dashboard"
       onNavigate={(item) => (item.path === '/app' ? router.replace('/app' as never) : router.push(item.path as never))}
-      title="BizFlow Dashboard"
+      title="OpsFlow Dashboard"
       subtitle="Customer workspace"
       searchValue={search}
       onSearchChange={setSearch}
@@ -62,14 +63,14 @@ export default function CustomerDashboard() {
       <View style={styles.content}>
         <View style={styles.kpiGrid}>
           <BizFlowKpiCard label="Today Sales" value={formatMYR(stats.todaySales)} detail="Live from POS" />
-          <BizFlowKpiCard label="Purchase Orders" value={formatMYR(stats.purchaseOrders)} detail="Suppliers this week" />
+          <BizFlowKpiCard label="Purchase Orders" value={formatMYR(stats.purchaseOrders)} detail="Purchase order value" />
           <BizFlowKpiCard label="Low Stock" value={`${stats.lowStockItems.length}`} detail="Items need restock" tone="warning" />
-          <BizFlowKpiCard label="Cash Balance" value={formatMYR(stats.cashBalance)} detail="Bank and cash" tone="success" />
+          <BizFlowKpiCard label="Cash Balance" value={formatMYR(stats.cashBalance)} detail="Cash ledger balance" tone="success" />
         </View>
 
         <View style={styles.grid}>
           <BizFlowSectionCard title="Sales chart" subtitle="Last 7 days" style={styles.card}>
-            <BizFlowChart data={stats.salesTrend} labels={['M', 'T', 'W', 'T', 'F', 'S', 'S']} />
+            <BizFlowChart data={stats.salesTrend.values} labels={stats.salesTrend.labels} />
           </BizFlowSectionCard>
 
           <BizFlowSectionCard title="Inventory summary" subtitle={`${products.length} products tracked`} style={styles.card}>
