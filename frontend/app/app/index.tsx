@@ -35,7 +35,7 @@ export default function CustomerDashboard() {
     const salesTrend = salesByDay(sales);
     const todaySales = salesTrend.today;
     const purchaseOrders = orders.reduce((sum, purchase) => sum + (purchase.total || 0), 0);
-    const lowStockItems = products.filter((product) => product.stock <= (product.minStock || 10));
+    const lowStockItems = products.filter((product) => product.stock <= (product.minStock ?? 10));
     const cashBalance = cashLedgerBalance(cashEntries);
 
     return {
