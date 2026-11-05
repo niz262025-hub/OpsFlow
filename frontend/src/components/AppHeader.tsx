@@ -26,7 +26,7 @@ export function AppHeader() {
       setMenuOpen(false);
       await logout();
     } catch (error: any) {
-      Alert.alert('Sign out failed', error?.message || 'Could not sign out right now.');
+      Alert.alert('Tidak dapat kembali ke MYOPS', error?.message || 'Sila cuba lagi.');
     } finally {
       setLoggingOut(false);
     }
@@ -86,10 +86,10 @@ export function AppHeader() {
                   {loggingOut ? (
                     <ActivityIndicator size="small" color={theme.colors.primary} />
                   ) : (
-                    <MaterialIcons name="logout" size={18} color={theme.colors.error} />
+                    <MaterialIcons name="home" size={18} color={theme.colors.error} />
                   )}
                   <Text style={[styles.logoutText, { color: theme.colors.error }]}>
-                    {loggingOut ? 'Signing out...' : 'Sign Out'}
+                    {loggingOut ? 'Kembali…' : 'Kembali ke MYOPS'}
                   </Text>
                 </TouchableOpacity>
               </View>

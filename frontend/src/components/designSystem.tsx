@@ -227,7 +227,7 @@ export function BizFlowTopBar({ title, subtitle, searchValue, onSearchChange, pr
         </View>
       ) : null}
       {actions}
-      <BizFlowButton title={loggingOut ? 'Logging out…' : 'Logout'} icon="logout" variant="secondary" disabled={loggingOut} onPress={handleLogout} />
+      <BizFlowButton title={loggingOut ? 'Kembali…' : 'Kembali ke MYOPS'} icon="home" variant="secondary" disabled={loggingOut} onPress={handleLogout} />
       {(profileName || profileRole) ? (
         <View style={[styles.profileChip, { backgroundColor: '#FFFFFF', borderColor: '#E2E8F0' }]}> 
           <View style={[styles.profileAvatar, { backgroundColor: '#EEEAF6' }]}> 
