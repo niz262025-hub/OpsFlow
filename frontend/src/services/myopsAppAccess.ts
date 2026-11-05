@@ -3,8 +3,11 @@ import { storage } from '@/src/utils/storage';
 export const OPSFLOW_API_TOKEN_KEY = 'auth:opsflow-api-token';
 const LAUNCH_TICKET = /^[A-Za-z0-9_-]{43}$/;
 
+export type OpsFlowProfile = { uid: string; email: string; displayName?: string; companyName?: string; companyId: string; role: 'admin' | 'manager' | 'cashier' };
+
 export type MyopsRedeemResult = {
-  firebaseCustomToken: string;
+  profile: OpsFlowProfile | null;
+  onboardingRequired: boolean;
   accessToken: string;
 };
 
@@ -24,7 +27,8 @@ export function extractMyopsLaunchTicket(url: string): string | null {
 }
 
 function apiUrl(path: string): string {
-  const origin = process.env.EXPO_PUBLIC_OPSFLOW_API_URL?.trim();
+  const origin = process.env.EXPO_PUBLIC_OPSFLOW_API_URL?.trim()
+    || (typeof window !== 'undefined' ? window.location.origin : undefined);
   if (!origin) throw new Error('OpsFlow access service is not configured.');
   const parsed = new URL(origin);
   if (parsed.protocol !== 'https:' && parsed.hostname !== 'localhost') {
@@ -53,10 +57,10 @@ export async function redeemMyopsLaunchTicket(ticket: string): Promise<MyopsRede
     body: JSON.stringify({ ticket }),
   });
   const payload = await readJson(response);
-  if (!response.ok || typeof payload.firebase_custom_token !== 'string' || typeof payload.access_token !== 'string') {
+  if (!response.ok || (!payload.profile && payload.onboarding_required !== true) || typeof payload.access_token !== 'string') {
     throw new Error(typeof payload.detail === 'string' ? payload.detail : 'MYOPS could not open OpsFlow.');
   }
-  return { firebaseCustomToken: payload.firebase_custom_token, accessToken: payload.access_token };
+  return { profile: (payload.profile as OpsFlowProfile) || null, onboardingRequired: payload.onboarding_required === true, accessToken: payload.access_token };
 }
 
 export async function refreshMyopsSession(accessToken: string, activity: boolean): Promise<boolean> {
@@ -98,4 +102,30 @@ export async function clearMyopsLaunchTicketFromUrl(): Promise<void> {
 
 export async function clearStoredMyopsAccessToken(): Promise<void> {
   await storage.secureRemove(OPSFLOW_API_TOKEN_KEY);
+}
+
+export async function opsflowRequest(path: string, body?: unknown): Promise<any> {
+  const token = await storage.secureGet<string | null>(OPSFLOW_API_TOKEN_KEY, null);
+  if (!token) throw new Error('MYOPS session required');
+  const response = await fetch(apiUrl(path), {
+    method: body === undefined ? 'GET' : 'POST', cache: 'no-store',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  const result = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(result?.detail || 'OpsFlow request failed');
+  return result;
+}
+
+// Keep staging users within the existing staging portal; production uses the official domain.
+export function myopsPortalUrl(): string {
+  // A Production build may keep the existing Vercel project name containing staging.
+  // Only the canonical MYOPS origin is accepted as an override; never arbitrary URLs.
+  if (process.env.EXPO_PUBLIC_MYOPS_PORTAL_ORIGIN === 'https://www.myops.com.my') {
+    return 'https://www.myops.com.my/';
+  }
+  const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
+  return /^opsflow-staging(?:-[a-z0-9-]+)?\.vercel\.app$/.test(hostname)
+    ? 'https://southerndotcom-website-git-feat-myop-ca0019-mohd-syaiful-nizam1.vercel.app/'
+    : 'https://www.myops.com.my/';
 }
