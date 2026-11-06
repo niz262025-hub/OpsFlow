@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { LinearGradient } from 'expo-linear-gradient';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, ViewStyle, StyleProp, Pressable } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, ViewStyle, StyleProp, Pressable, Platform, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useTheme } from '@/src/contexts/ThemeContext';
@@ -144,8 +144,10 @@ export function BizFlowSectionCard({ title, subtitle, action, children, style }:
 
 export function BizFlowTable({ columns, rows }: { columns: Array<{ key: string; label: string }>; rows: Array<Record<string, React.ReactNode>> }) {
   const { theme } = useTheme();
-  return (
-    <View style={[styles.table, { borderColor: theme.colors.border }]}> 
+  const { width } = useWindowDimensions();
+  const compactWeb = Platform.OS === 'web' && width < 900;
+  const table = (
+    <View style={[styles.table, { borderColor: theme.colors.border }, compactWeb && { minWidth: Math.max(520, columns.length * 120) }]}>
       <View style={[styles.tableHeader, { backgroundColor: theme.colors.cardMuted }]}> 
         {columns.map((column) => (
           <Text key={column.key} style={styles.tableHeaderText}>{column.label}</Text>
@@ -160,6 +162,7 @@ export function BizFlowTable({ columns, rows }: { columns: Array<{ key: string; 
       ))}
     </View>
   );
+  return compactWeb ? <ScrollView horizontal style={{ maxWidth: '100%' }} accessibilityLabel="Scroll table horizontally">{table}</ScrollView> : table;
 }
 
 export function BizFlowChart({ data, labels }: { data: number[]; labels: string[] }) {
@@ -244,12 +247,24 @@ export function BizFlowTopBar({ title, subtitle, searchValue, onSearchChange, pr
 }
 
 export function BizFlowDashboardShell({ sidebarItems, activeKey, onNavigate, title, subtitle, searchValue, onSearchChange, profileName, profileRole, avatarLabel, actions, children }: { sidebarItems: NavItem[]; activeKey: string; onNavigate: (item: NavItem) => void; title: string; subtitle?: string; searchValue?: string; onSearchChange?: (value: string) => void; profileName?: string; profileRole?: string; avatarLabel?: string; actions?: React.ReactNode; children: React.ReactNode }) {
+  const { width } = useWindowDimensions();
+  const compactWeb = Platform.OS === 'web' && width < 900;
+  const [menuOpen, setMenuOpen] = useState(false);
+  const navigate = (item: NavItem) => { setMenuOpen(false); onNavigate(item); };
   return (
     <SafeAreaView style={styles.safeArea}> 
       <LinearGradient pointerEvents="none" colors={['#FDE1C4', '#FDEEE9', '#FBF1F6']} locations={[0, 0.48, 1]} style={StyleSheet.absoluteFillObject} />
-      <View style={styles.shell}> 
-        <BizFlowSidebar items={sidebarItems} activeKey={activeKey} onNavigate={onNavigate} />
-        <ScrollView style={styles.main} contentContainerStyle={styles.mainContent}> 
+      <View style={[styles.shell, compactWeb && { flexDirection: 'column' }]}>
+        {compactWeb ? <>
+          <Pressable accessibilityRole="button" accessibilityLabel="Toggle navigation" accessibilityState={{ expanded: menuOpen }}
+            onPress={() => setMenuOpen(open => !open)} style={{ minHeight: 48, padding: 12, backgroundColor: '#071B49' }}>
+            <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>{menuOpen ? 'Close menu' : '☰ Menu'}</Text>
+          </Pressable>
+          {menuOpen && <ScrollView style={{ maxHeight: '55%', backgroundColor: '#071B49' }}>
+            <View style={{ alignItems: 'center' }}><BizFlowSidebar items={sidebarItems} activeKey={activeKey} onNavigate={navigate} /></View>
+          </ScrollView>}
+        </> : <BizFlowSidebar items={sidebarItems} activeKey={activeKey} onNavigate={onNavigate} />}
+        <ScrollView style={[styles.main, { minWidth: 0 }]} contentContainerStyle={[styles.mainContent, compactWeb && { padding: 12 }]}>
           <BizFlowTopBar title={title} subtitle={subtitle} searchValue={searchValue} onSearchChange={onSearchChange} profileName={profileName} profileRole={profileRole} avatarLabel={avatarLabel} actions={actions} />
           {children}
         </ScrollView>
