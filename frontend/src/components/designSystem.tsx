@@ -147,7 +147,7 @@ export function BizFlowTable({ columns, rows }: { columns: Array<{ key: string; 
   const { width } = useWindowDimensions();
   const compactWeb = Platform.OS === 'web' && width < 900;
   const table = (
-    <View style={[styles.table, { borderColor: theme.colors.border }, compactWeb && { minWidth: Math.max(520, columns.length * 120) }]}> 
+    <View style={[styles.table, { borderColor: theme.colors.border }, compactWeb && { minWidth: Math.max(520, columns.length * 120) }]}>
       <View style={[styles.tableHeader, { backgroundColor: theme.colors.cardMuted }]}> 
         {columns.map((column) => (
           <Text key={column.key} style={styles.tableHeaderText}>{column.label}</Text>
@@ -254,7 +254,7 @@ export function BizFlowDashboardShell({ sidebarItems, activeKey, onNavigate, tit
   return (
     <SafeAreaView style={styles.safeArea}> 
       <LinearGradient pointerEvents="none" colors={['#FDE1C4', '#FDEEE9', '#FBF1F6']} locations={[0, 0.48, 1]} style={StyleSheet.absoluteFillObject} />
-      <View style={[styles.shell, compactWeb && { flexDirection: 'column' }]}> 
+      <View style={[styles.shell, compactWeb && { flexDirection: 'column' }]}>
         {compactWeb ? <>
           <Pressable accessibilityRole="button" accessibilityLabel="Toggle navigation" accessibilityState={{ expanded: menuOpen }}
             onPress={() => setMenuOpen(open => !open)} style={{ minHeight: 48, padding: 12, backgroundColor: '#071B49' }}>
@@ -264,7 +264,7 @@ export function BizFlowDashboardShell({ sidebarItems, activeKey, onNavigate, tit
             <View style={{ alignItems: 'center' }}><BizFlowSidebar items={sidebarItems} activeKey={activeKey} onNavigate={navigate} /></View>
           </ScrollView>}
         </> : <BizFlowSidebar items={sidebarItems} activeKey={activeKey} onNavigate={onNavigate} />}
-        <ScrollView style={[styles.main, { minWidth: 0 }]} contentContainerStyle={[styles.mainContent, compactWeb && { padding: 12 }]}> 
+        <ScrollView style={[styles.main, { minWidth: 0 }]} contentContainerStyle={[styles.mainContent, compactWeb && { padding: 12 }]}>
           <BizFlowTopBar title={title} subtitle={subtitle} searchValue={searchValue} onSearchChange={onSearchChange} profileName={profileName} profileRole={profileRole} avatarLabel={avatarLabel} actions={actions} />
           {children}
         </ScrollView>
