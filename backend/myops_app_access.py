@@ -22,6 +22,18 @@ TICKET_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", re.I)
 USER_REF_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
 MYOPS_PATHS = {"/api/app/redeem", "/api/app/entitlement"}
+OPSFLOW_PRODUCT_ALIASES = {
+    "opsflow",
+    "opsflow app",
+    "opsflow app access",
+    "opsflow bundle",
+    "opsflow subscription",
+    "opsflow package",
+    "opsflow starter",
+    "opsflow single app",
+    "opsflow any 2 apps",
+    "opsflow all 3 apps",
+}
 
 
 class MyopsAccessError(Exception):
@@ -122,8 +134,10 @@ def validate_redeem_response(payload: Any) -> dict[str, str]:
         raise MyopsAccessError("MYOPS returned an invalid launch response")
     session_id = payload.get("session_id")
     user_ref = payload.get("user_ref")
+    product = payload.get("product")
+    product_name = str(product).strip().lower() if isinstance(product, str) else ""
     if (
-        payload.get("product") != "opsflow"
+        product_name not in OPSFLOW_PRODUCT_ALIASES
         or not isinstance(session_id, str)
         or not UUID_RE.fullmatch(session_id)
         or not isinstance(user_ref, str)
