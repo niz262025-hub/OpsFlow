@@ -1,7 +1,9 @@
 import React from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import { BizFlowBadge, BizFlowButton, BizFlowSectionCard } from '@/src/components/designSystem';
+import { localeOptions } from '@/src/i18n/translations';
+import { useLocale } from '@/src/contexts/LocaleContext';
 
 const features = [
   { title: 'POS', body: 'Fast checkout for retail counters, boutiques, and kiosks.' },
@@ -32,42 +34,54 @@ const steps = [
 
 export default function Index() {
   const router = useRouter();
+  const { locale, setLocale, t } = useLocale();
 
   return (
     <ScrollView style={styles.page} contentContainerStyle={styles.contentContainer}>
       <View style={styles.navbar}>
         <Text style={styles.brand}>BizFlow</Text>
         <View style={styles.navLinks}>
-          <Text style={styles.navLink}>Features</Text>
-          <Text style={styles.navLink}>Access</Text>
-          <Text style={styles.navLink}>How It Works</Text>
-          <Text style={styles.navLink}>Contact</Text>
-          <BizFlowButton title="Login with MYOPS" variant="secondary" onPress={() => router.push('/login')} />
-          <BizFlowButton title="Open OpsFlow" onPress={() => router.push('/login')} />
+          <Text style={styles.navLink}>{t('nav.features')}</Text>
+          <Text style={styles.navLink}>{t('nav.access')}</Text>
+          <Text style={styles.navLink}>{t('nav.howItWorks')}</Text>
+          <Text style={styles.navLink}>{t('nav.contact')}</Text>
+          <View style={styles.langSelectorWrap}>
+            {localeOptions.map((option) => (
+              <Pressable
+                key={option.code}
+                accessibilityRole="button"
+                testID={`locale-${option.code}`}
+                onPress={() => { void setLocale(option.code); }}
+                style={[styles.langPill, locale === option.code && styles.langPillActive]}
+              >
+                <Text style={[styles.langPillText, locale === option.code && styles.langPillTextActive]}>{option.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <BizFlowButton title={t('nav.login')} variant="secondary" onPress={() => router.push('/login')} />
+          <BizFlowButton title={t('nav.openApp')} onPress={() => router.push('/login')} />
         </View>
       </View>
 
       <BizFlowSectionCard style={styles.heroCard}>
         <View style={styles.heroTextWrap}>
-          <Text style={styles.eyebrow}>All-in-one business operations for Malaysian SMEs</Text>
-          <Text style={styles.heroTitle}>Run Your Business Smarter with BizFlow</Text>
-          <Text style={styles.heroSubtitle}>
-            POS, Purchase, Inventory, Finance & Reports in one cloud-based system built for boutiques, kiosks, and growing small businesses.
-          </Text>
+          <Text style={styles.eyebrow}>{t('home.eyebrow')}</Text>
+          <Text style={styles.heroTitle}>{t('home.title')}</Text>
+          <Text style={styles.heroSubtitle}>{t('home.subtitle')}</Text>
           <View style={styles.heroActions}>
-            <BizFlowButton title="Continue with MYOPS" onPress={() => router.push('/login')} />
-            <BizFlowButton title="View Live Demo" variant="secondary" onPress={() => router.push('/demo')} />
+            <BizFlowButton title={t('home.primaryCta')} onPress={() => router.push('/login')} />
+            <BizFlowButton title={t('home.secondaryCta')} variant="secondary" onPress={() => router.push('/demo')} />
           </View>
           <View style={styles.badgesRow}>
-            <BizFlowBadge label="Web & Android" tone="primary" />
-            <BizFlowBadge label="Cloud Sync" tone="secondary" />
-            <BizFlowBadge label="No Credit Card Required" tone="success" />
+            <BizFlowBadge label={t('home.badge.web')} tone="primary" />
+            <BizFlowBadge label={t('home.badge.sync')} tone="secondary" />
+            <BizFlowBadge label={t('home.badge.trial')} tone="success" />
           </View>
         </View>
       </BizFlowSectionCard>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Everything you need to run daily operations</Text>
+        <Text style={styles.sectionTitle}>{t('home.section.title1')}</Text>
         <View style={styles.grid}>
           {features.map((item) => (
             <BizFlowSectionCard key={item.title} title={item.title} subtitle={item.body} style={styles.card} />
@@ -76,7 +90,7 @@ export default function Index() {
       </View>
 
       <View style={styles.sectionAlt}>
-        <Text style={styles.sectionTitle}>Why businesses choose BizFlow</Text>
+        <Text style={styles.sectionTitle}>{t('home.section.title2')}</Text>
         <View style={styles.benefitList}>
           {benefits.map((item) => (
             <View key={item} style={styles.benefitItem}>
@@ -88,7 +102,7 @@ export default function Index() {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Simple pricing, built for launch</Text>
+        <Text style={styles.sectionTitle}>{t('home.section.title3')}</Text>
         <View style={styles.pricingCard}>
           <Text style={styles.planName}>Basic Plan</Text>
           <Text style={styles.price}>RM49/month</Text>
@@ -99,7 +113,7 @@ export default function Index() {
           <Text style={styles.planFeatures}>• POS, Purchase, Inventory, Finance, Reports, Setup</Text>
           <Text style={styles.planFeatures}>• PDF export</Text>
           <Text style={styles.foundingOffer}>Founding Customer Offer: first 100 customers get RM39/month for life</Text>
-          <BizFlowButton title="Continue with MYOPS" onPress={() => router.push('/login')} />
+          <BizFlowButton title={t('home.primaryCta')} onPress={() => router.push('/login')} />
         </View>
         <View style={styles.comingSoonCard}>
           <Text style={styles.comingSoonTitle}>Pro & Advance</Text>
@@ -108,7 +122,7 @@ export default function Index() {
       </View>
 
       <View style={styles.sectionAlt}>
-        <Text style={styles.sectionTitle}>How it works</Text>
+        <Text style={styles.sectionTitle}>{t('home.section.title4')}</Text>
         <View style={styles.stepsRow}>
           {steps.map((step, index) => (
             <View key={step} style={styles.stepCard}>
@@ -120,18 +134,18 @@ export default function Index() {
       </View>
 
       <View style={styles.ctaBanner}>
-        <Text style={styles.ctaTitle}>Ready to simplify your business?</Text>
-        <Text style={styles.ctaSubtitle}>Sign in once at MYOPS. Your package determines which apps you can open.</Text>
-        <BizFlowButton title="Continue to MYOPS" onPress={() => router.push('/login')} />
+        <Text style={styles.ctaTitle}>{t('home.cta.title')}</Text>
+        <Text style={styles.ctaSubtitle}>{t('home.cta.subtitle')}</Text>
+        <BizFlowButton title={t('login.primary')} onPress={() => router.push('/login')} />
       </View>
 
       <View style={styles.footer}>
         <Text style={styles.footerBrand}>BizFlow</Text>
         <View style={styles.footerLinks}>
-          <Text style={styles.footerLink}>Privacy Policy</Text>
-          <Text style={styles.footerLink}>Terms of Service</Text>
-          <Text style={styles.footerLink}>Contact</Text>
-          <Text style={styles.footerLink}>WhatsApp Support</Text>
+          <Text style={styles.footerLink}>{t('home.footer.privacy')}</Text>
+          <Text style={styles.footerLink}>{t('home.footer.terms')}</Text>
+          <Text style={styles.footerLink}>{t('home.footer.contact')}</Text>
+          <Text style={styles.footerLink}>{t('home.footer.support')}</Text>
         </View>
       </View>
     </ScrollView>
@@ -198,4 +212,9 @@ const styles = StyleSheet.create({
   footerBrand: { fontSize: 18, fontWeight: '800', color: '#0F172A', fontFamily: 'Inter' },
   footerLinks: { flexDirection: 'row', gap: 14, flexWrap: 'wrap' },
   footerLink: { color: '#64748B', fontSize: 13, fontFamily: 'Inter' },
+  langSelectorWrap: { flexDirection: 'row', gap: 6, flexWrap: 'wrap', alignItems: 'center' },
+  langPill: { borderRadius: 999, borderWidth: 1, borderColor: '#CBD5E1', paddingHorizontal: 8, paddingVertical: 6 },
+  langPillActive: { backgroundColor: '#DBEAFE', borderColor: '#93C5FD' },
+  langPillText: { fontSize: 11, color: '#334155', fontWeight: '700' },
+  langPillTextActive: { color: '#1D4ED8' },
 });
