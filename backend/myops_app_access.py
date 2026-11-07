@@ -22,6 +22,11 @@ TICKET_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", re.I)
 USER_REF_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
 MYOPS_PATHS = {"/api/app/redeem", "/api/app/entitlement"}
+MYOPS_LIVE_APP_IDS = {"opsflow", "opsfinance", "opsps", "opshr", "myhr"}
+
+
+def myops_app_ids() -> frozenset[str]:
+    return frozenset(MYOPS_LIVE_APP_IDS)
 
 
 class MyopsAccessError(Exception):
@@ -117,17 +122,28 @@ def call_myops(path: str, body: dict[str, Any], *, opener: Callable[..., Any] = 
         raise MyopsAccessError("MYOPS access could not be verified") from error
 
 
+def _configured_app_id() -> str:
+    app_id = os.getenv("MYOPS_APP_ID", "opsflow").strip().lower()
+    if not app_id or not APP_ID_RE.fullmatch(app_id):
+        raise MyopsAccessError("MYOPS app access is not configured")
+    return app_id
+
+
 def validate_redeem_response(payload: Any) -> dict[str, str]:
     if not isinstance(payload, dict):
         raise MyopsAccessError("MYOPS returned an invalid launch response")
     session_id = payload.get("session_id")
     user_ref = payload.get("user_ref")
+    product = str(payload.get("product") or "").strip().lower()
+    configured_app = _configured_app_id()
     if (
-        payload.get("product") != "opsflow"
+        configured_app not in MYOPS_LIVE_APP_IDS
+        or product not in MYOPS_LIVE_APP_IDS
+        or product != configured_app
         or not isinstance(session_id, str)
         or not UUID_RE.fullmatch(session_id)
         or not isinstance(user_ref, str)
         or not USER_REF_RE.fullmatch(user_ref)
     ):
-        raise MyopsAccessError("MYOPS launch is not authorized for OpsFlow")
-    return {"session_id": session_id, "user_ref": user_ref, "product": "opsflow"}
+        raise MyopsAccessError(f"MYOPS launch is not authorized for {configured_app}")
+    return {"session_id": session_id, "user_ref": user_ref, "product": product}
