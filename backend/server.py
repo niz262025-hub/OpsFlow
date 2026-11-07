@@ -46,9 +46,9 @@ def _require_env(name: str) -> str:
 SECRET_KEY_SOURCE = os.getenv("JWT_SECRET_KEY") or os.getenv("OPSFLOW_JWT_SECRET") or secrets.token_urlsafe(48)
 SECRET_KEY = hashlib.sha256(SECRET_KEY_SOURCE.encode("utf-8")).hexdigest()
 ALGORITHM = "HS256"
-TRIAL_DAYS = 14
+TRIAL_DAYS = 7
 VALID_PAYMENT_METHODS = {"Cash", "QR", "Bank Transfer", "Transfer"}
-MYOPS_SESSION_SECONDS = 20
+MYOPS_SESSION_SECONDS = 15 * 60
 
 
 def myops_required() -> bool:
