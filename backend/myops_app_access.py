@@ -24,6 +24,24 @@ USER_REF_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
 MYOPS_PATHS = {"/api/app/redeem", "/api/app/entitlement"}
 
 
+def _normalized_product_name(value: Any) -> str:
+    if isinstance(value, dict):
+        for key in ("name", "slug", "code", "product", "id"):
+            if key in value:
+                return _normalized_product_name(value[key])
+        return ""
+    if not isinstance(value, str):
+        return ""
+    normalized = value.strip().lower().replace("_", " ").replace("-", " ")
+    normalized = re.sub(r"[^a-z0-9\s]", " ", normalized)
+    return " ".join(normalized.split())
+
+
+def is_opsflow_product(value: Any) -> bool:
+    normalized = _normalized_product_name(value)
+    return bool(normalized) and "opsflow" in normalized.split()
+
+
 class MyopsAccessError(Exception):
     """An invalid, unavailable, or denied MYOPS access operation."""
 
@@ -122,8 +140,9 @@ def validate_redeem_response(payload: Any) -> dict[str, str]:
         raise MyopsAccessError("MYOPS returned an invalid launch response")
     session_id = payload.get("session_id")
     user_ref = payload.get("user_ref")
+    product = payload.get("product")
     if (
-        payload.get("product") != "opsflow"
+        not is_opsflow_product(product)
         or not isinstance(session_id, str)
         or not UUID_RE.fullmatch(session_id)
         or not isinstance(user_ref, str)
