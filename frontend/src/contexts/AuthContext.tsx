@@ -14,6 +14,7 @@ import {
   clearStoredMyopsAccessToken,
   endMyopsSession,
   extractMyopsLaunchTicket,
+  MYOPS_INACTIVITY_TIMEOUT_MS,
   OPSFLOW_API_TOKEN_KEY,
   redeemMyopsLaunchTicket,
   refreshMyopsSession,
@@ -212,14 +213,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!user || !firebaseReady || typeof document === 'undefined') return;
     const auth = getFirebaseAuth();
-    let lastActivityAt = Date.now() - 60_000;
+    let lastActivityAt = Date.now() - MYOPS_INACTIVITY_TIMEOUT_MS;
     const markActivity = () => { lastActivityAt = Date.now(); };
     const events = ['pointerdown', 'keydown', 'touchstart', 'scroll'];
     events.forEach((eventName) => document.addEventListener(eventName, markActivity, { passive: true }));
     const timer = setInterval(() => {
       void (async () => {
         const token = await storage.secureGet<string | null>(OPSFLOW_API_TOKEN_KEY, null);
-        const active = token ? await refreshMyopsSession(token, Date.now() - lastActivityAt < 10_000) : false;
+        const active = token ? await refreshMyopsSession(token, Date.now() - lastActivityAt < MYOPS_INACTIVITY_TIMEOUT_MS) : false;
         if (!active) {
           await clearStoredMyopsAccessToken();
           await signOut(auth);
