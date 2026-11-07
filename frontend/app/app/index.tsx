@@ -33,7 +33,7 @@ export default function CustomerDashboard() {
   const stats = useMemo(() => {
     const todaySales = sales.reduce((sum, sale) => sum + (sale.total || 0), 0);
     const purchaseOrders = purchases.reduce((sum, purchase) => sum + (purchase.total || 0), 0);
-    const lowStockItems = products.filter((product) => product.stock <= (product.minStock || 10));
+    const lowStockItems = products.filter((product) => product.stock <= (product.minStock ?? 10));
     const cashBalance = expenses.reduce((sum, expense) => sum + (expense.amount || 0), 0);
     const salesTrend = [42, 58, 49, 61, 72, 69, 88];
 
