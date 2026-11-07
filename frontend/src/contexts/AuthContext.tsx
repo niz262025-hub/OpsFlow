@@ -1,7 +1,30 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { Linking } from 'react-native';
 import { storage } from '@/src/utils/storage';
-import { clearMyopsLaunchTicketFromUrl, clearStoredMyopsAccessToken, endMyopsSession, extractMyopsLaunchTicket, OPSFLOW_API_TOKEN_KEY, redeemMyopsLaunchTicket, refreshMyopsSession, opsflowRequest, type OpsFlowProfile, myopsPortalUrl } from '@/src/services/myopsAppAccess';
+import {
+  clearMyopsLaunchTicketFromUrl,
+  clearStoredMyopsAccessToken,
+  endMyopsSession,
+  extractMyopsLaunchTicket,
+  MYOPS_INACTIVITY_TIMEOUT_MS,
+  OPSFLOW_API_TOKEN_KEY,
+  redeemMyopsLaunchTicket,
+  refreshMyopsSession,
+  opsflowRequest,
+  type OpsFlowProfile,
+  myopsPortalUrl,
+} from '@/src/services/myopsAppAccess';
+
+declare global {
+  interface Window {
+    __BIZFLOW_DEBUG__?: {
+      uid?: string | null;
+      companyId?: string | null;
+      route?: string;
+    };
+  }
+}
+
 export type Role = 'admin' | 'manager' | 'cashier';
 export interface UserProfile extends OpsFlowProfile { status?: string; createdAt?: any; }
 type OnboardingAccess = { onboarding_required: true };
@@ -18,6 +41,9 @@ const AuthContext=createContext<AuthCtx | undefined>(undefined);
 export function AuthProvider({children}:{children:React.ReactNode}) {
  const [user,setUser]=useState<User|null>(null),[profile,setProfile]=useState<UserProfile|null>(null),[loading,setLoading]=useState(true);
  const [onboardingRequired,setOnboardingRequired]=useState(false);
+ useEffect(()=>{
+  if(typeof window!=='undefined')window.__BIZFLOW_DEBUG__={uid:user?.uid??null,companyId:profile?.companyId??null,route:window.location.pathname};
+ },[loading,profile?.companyId,user?.uid]);
  const clear=useCallback(async()=>{setUser(null);setProfile(null);setOnboardingRequired(false);setLoading(false);await clearStoredMyopsAccessToken();await Promise.all(['auth:user','auth:profile','auth:company','auth:workspace'].map(key=>storage.removeItem(key)));},[]);
  const adopt=useCallback((next:UserProfile | OnboardingAccess)=>{if('onboarding_required' in next && next.onboarding_required === true){setUser(null);setProfile(null);setOnboardingRequired(true);setLoading(false);return;}if(!('uid' in next)||!next?.uid||!next.companyId||!['admin','manager','cashier'].includes(next.role))throw new Error('Invalid OpsFlow identity');setOnboardingRequired(false);setUser({uid:next.uid,email:next.email||''});setProfile(next);setLoading(false);},[]);
  const refreshProfile=useCallback(async()=>{adopt(await opsflowRequest('/api/auth/me'));},[adopt]);
@@ -43,7 +69,7 @@ export function AuthProvider({children}:{children:React.ReactNode}) {
   let lastActivity=Date.now(),lastSent=lastActivity,busy=false;
   const activity=(event:Event)=>{if(event.isTrusted&&document.visibilityState==='visible')lastActivity=Date.now();};
   const events=['pointerdown','keydown','touchstart','scroll'];events.forEach(name=>document.addEventListener(name,activity,{passive:true}));
-  const timer=setInterval(()=>{if(busy)return;void(async()=>{busy=true;try{if(Date.now()-lastActivity>=15*60_000){await logout();return;}const token=await storage.secureGet<string|null>(OPSFLOW_API_TOKEN_KEY,null);const sent=lastActivity;if(!token||!await refreshMyopsSession(token,sent>lastSent))await logout();else lastSent=sent;}finally{busy=false;}})();},10_000);
+  const timer=setInterval(()=>{if(busy)return;void(async()=>{busy=true;try{if(Date.now()-lastActivity>=MYOPS_INACTIVITY_TIMEOUT_MS){await logout();return;}const token=await storage.secureGet<string|null>(OPSFLOW_API_TOKEN_KEY,null);const sent=lastActivity;if(!token||!await refreshMyopsSession(token,sent>lastSent))await logout();else lastSent=sent;}finally{busy=false;}})();},10_000);
   return()=>{clearInterval(timer);events.forEach(name=>document.removeEventListener(name,activity));};
  },[logout,user?.uid,onboardingRequired]);
  const completeOnboarding=useCallback(async()=>{adopt(await opsflowRequest('/api/onboarding/company',{}));},[adopt]);
