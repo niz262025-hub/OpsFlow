@@ -177,7 +177,7 @@ export const translations: Record<LocaleCode, Record<string, string>> = {
 
 export function resolveLocale(locale?: string | null): LocaleCode {
   if (!locale) return DEFAULT_LOCALE;
-  const normalized = locale.toLowerCase();
+  const normalized = locale.toLowerCase().replace(/_/g, '-');
   if (normalized === 'zh' || normalized === 'zh-cn') return 'zh-CN';
   if (normalized === 'ms' || normalized === 'ms-my' || normalized === 'bm') return 'ms';
   if (normalized === 'ta' || normalized === 'ta-in') return 'ta';
