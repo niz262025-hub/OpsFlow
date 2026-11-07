@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { useData } from '@/src/contexts/DataContext';
 import { BizFlowButton, BizFlowDashboardShell, BizFlowKpiCard, BizFlowSectionCard, BizFlowStatusChip, BizFlowTable } from '@/src/components/designSystem';
 import { formatMYR } from '@/src/utils/currency';
+import { getMinStockThreshold, isLowStock } from '@/src/utils/inventoryThreshold';
 
 const modules = [
   { key: 'dashboard', label: 'Dashboard', icon: 'dashboard' as const, path: '/app' },
@@ -22,7 +23,7 @@ export default function CustomerInventory() {
   const [search, setSearch] = useState('');
 
   const filteredProducts = useMemo(() => products.filter((product) => `${product.name} ${product.sku}`.toLowerCase().includes(search.toLowerCase())).sort((a, b) => a.stock - b.stock), [products, search]);
-  const lowStockItems = useMemo(() => products.filter((product) => product.stock <= (product.minStock ?? 10)), [products]);
+  const lowStockItems = useMemo(() => products.filter((product) => isLowStock(product.stock, product.minStock)), [products]);
   const stockValue = useMemo(() => products.reduce((sum, product) => sum + (product.stock || 0) * (product.costPrice || 0), 0), [products]);
 
   const restock = async (product: any) => {
@@ -54,7 +55,17 @@ export default function CustomerInventory() {
 
         <View style={styles.grid}>
           <BizFlowSectionCard title="Stock overview" subtitle="Current quantities" style={styles.card}>
-            <BizFlowTable columns={[{ key: 'product', label: 'Product' }, { key: 'stock', label: 'Stock' }, { key: 'status', label: 'Status' }, { key: 'action', label: 'Action' }]} rows={filteredProducts.map((product) => ({ product: product.name, stock: `${product.stock}`, status: <BizFlowStatusChip label={product.stock <= (product.minStock ?? 10) ? 'Low' : 'Healthy'} tone={product.stock <= (product.minStock ?? 10) ? 'warning' : 'success'} />, action: <BizFlowButton title="Restock" variant="secondary" onPress={() => restock(product)} /> }))} />
+            <BizFlowTable columns={[{ key: 'product', label: 'Product' }, { key: 'stock', label: 'Stock' }, { key: 'status', label: 'Status' }, { key: 'action', label: 'Action' }]} rows={filteredProducts.map((product) => {
+          const threshold = getMinStockThreshold(product.minStock);
+          const isLow = isLowStock(product.stock, threshold);
+
+          return {
+            product: product.name,
+            stock: `${product.stock}`,
+            status: <BizFlowStatusChip label={isLow ? 'Low' : 'Healthy'} tone={isLow ? 'warning' : 'success'} />,
+            action: <BizFlowButton title="Restock" variant="secondary" onPress={() => restock(product)} />,
+          };
+            })} />
           </BizFlowSectionCard>
           <BizFlowSectionCard title="Low stock alerts" subtitle="Prioritize replenishment" style={styles.card}>
             <View style={styles.listWrap}>

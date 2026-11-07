@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { useData } from '@/src/contexts/DataContext';
 import { formatMYR } from '@/src/utils/currency';
+import { isLowStock } from '@/src/utils/inventoryThreshold';
 import { BizFlowButton, BizFlowChart, BizFlowDashboardShell, BizFlowKpiCard, BizFlowSectionCard, BizFlowStatusChip, BizFlowTable } from '@/src/components/designSystem';
 
 const modules = [
@@ -33,7 +34,7 @@ export default function CustomerDashboard() {
   const stats = useMemo(() => {
     const todaySales = sales.reduce((sum, sale) => sum + (sale.total || 0), 0);
     const purchaseOrders = purchases.reduce((sum, purchase) => sum + (purchase.total || 0), 0);
-    const lowStockItems = products.filter((product) => product.stock <= (product.minStock ?? 10));
+    const lowStockItems = products.filter((product) => isLowStock(product.stock, product.minStock));
     const cashBalance = expenses.reduce((sum, expense) => sum + (expense.amount || 0), 0);
     const salesTrend = [42, 58, 49, 61, 72, 69, 88];
 
