@@ -49,6 +49,7 @@ ALGORITHM = "HS256"
 TRIAL_DAYS = 7
 VALID_PAYMENT_METHODS = {"Cash", "QR", "Bank Transfer", "Transfer"}
 MYOPS_SESSION_SECONDS = 15 * 60
+MYOPS_APP_ID = os.getenv("MYOPS_APP_ID", "opsflow").strip().lower() or "opsflow"
 
 
 def myops_required() -> bool:
@@ -563,6 +564,7 @@ async def redeem_myops_ticket(payload: MyopsTicketRequest):
         raise HTTPException(status_code=503, detail="OpsFlow identity service is unavailable") from error
 
     session_id = app_session["session_id"]
+    product_id = str(app_session.get("product") or MYOPS_APP_ID).strip().lower() or MYOPS_APP_ID
     expires_at = _valid_until()
     mongo_expires_at = expires_at.replace(tzinfo=None)
     session_record = {
@@ -570,7 +572,7 @@ async def redeem_myops_ticket(payload: MyopsTicketRequest):
         "myops_user_ref": app_session["user_ref"],
         "firebase_uid": firebase_uid,
         "mongo_user_id": mongo_user_id,
-        "product": "opsflow",
+        "product": product_id,
         "valid_until": mongo_expires_at,
         "revoked_at": None,
         "updated_at": _utc_now(),
@@ -583,7 +585,7 @@ async def redeem_myops_ticket(payload: MyopsTicketRequest):
     try:
         await run_in_threadpool(session_ref.set, {
             "myops_session_id": session_id,
-            "product": "opsflow",
+            "product": product_id,
             "active": True,
             "valid_until": expires_at,
             "updated_at": datetime.now(timezone.utc),
@@ -591,7 +593,7 @@ async def redeem_myops_ticket(payload: MyopsTicketRequest):
         custom_token = await run_in_threadpool(
             admin_auth.create_custom_token,
             firebase_uid,
-            {"myops_product": "opsflow", "myops_session_id": session_id},
+            {"myops_product": product_id, "myops_session_id": session_id},
         )
     except Exception as error:
         await db.myops_app_sessions.update_one(
@@ -605,7 +607,7 @@ async def redeem_myops_ticket(payload: MyopsTicketRequest):
         "user_id": mongo_user_id,
         "firebase_uid": firebase_uid,
         "myops_session_id": session_id,
-        "myops_product": "opsflow",
+        "myops_product": product_id,
         "exp": datetime.utcnow() + timedelta(days=30),
     })
     return {
@@ -635,7 +637,7 @@ async def _revoke_myops_session(current_user: dict) -> None:
         ref = admin_firestore.collection("myops_access_sessions").document(session["firebase_uid"])
         await run_in_threadpool(ref.set, {
             "myops_session_id": session["myops_session_id"],
-            "product": "opsflow",
+            "product": str(session.get("product") or MYOPS_APP_ID).strip().lower() or MYOPS_APP_ID,
             "active": False,
             "valid_until": datetime.now(timezone.utc),
             "updated_at": datetime.now(timezone.utc),
@@ -651,7 +653,7 @@ async def refresh_myops_access(payload: MyopsRefreshRequest, current_user: dict 
         raise HTTPException(status_code=401, detail="MYOPS session required")
     request_body = {
         "session_id": session["myops_session_id"],
-        "product": "opsflow",
+        "product": str(session.get("product") or MYOPS_APP_ID).strip().lower() or MYOPS_APP_ID,
         "activity": payload.activity,
         "sensitive": False,
     }
@@ -677,7 +679,7 @@ async def refresh_myops_access(payload: MyopsRefreshRequest, current_user: dict 
         ref = admin_firestore.collection("myops_access_sessions").document(session["firebase_uid"])
         await run_in_threadpool(ref.set, {
             "myops_session_id": session["myops_session_id"],
-            "product": "opsflow",
+            "product": str(session.get("product") or MYOPS_APP_ID).strip().lower() or MYOPS_APP_ID,
             "active": True,
             "valid_until": expires_at,
             "updated_at": datetime.now(timezone.utc),
