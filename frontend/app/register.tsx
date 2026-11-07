@@ -2,18 +2,21 @@ import React from 'react';
 import { Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { useLocale } from '@/src/contexts/LocaleContext';
 
 export default function RegisterRoute() {
+  const { t } = useLocale();
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
-        <Text style={styles.title}>Create your account through MYOPS</Text>
-        <Text style={styles.subtitle}>Create your MYOPS account and choose the package that includes OpsFlow.</Text>
+        <Text style={styles.title}>{t('register.title')}</Text>
+        <Text style={styles.subtitle}>{t('register.subtitle')}</Text>
         <TouchableOpacity style={styles.button} onPress={() => { void Linking.openURL('https://www.myops.com.my/'); }}>
-          <Text style={styles.buttonText}>Continue to MYOPS</Text>
+          <Text style={styles.buttonText}>{t('register.primary')}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.link} onPress={() => router.replace('/')}>
-          <Text style={styles.linkText}>Back to OpsFlow</Text>
+          <Text style={styles.linkText}>{t('register.back')}</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
