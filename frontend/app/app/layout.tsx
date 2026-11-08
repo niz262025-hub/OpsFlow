@@ -1,3 +1,4 @@
+import { useLocale } from '@/src/contexts/LocaleContext';
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -16,6 +17,7 @@ const modules = [
 ];
 
 export default function MerchantLayoutPage() {
+  const { tx } = useLocale();
   const router = useRouter();
   const { categories, products } = useData();
   const [search, setSearch] = useState('');
@@ -24,7 +26,7 @@ export default function MerchantLayoutPage() {
   const categoryRows = filteredCategories.map((category) => ({
     name: category.name,
     products: `${products.filter((product) => product.categoryId === category.id).length}`,
-    status: <BizFlowStatusChip label="Ready" tone="success" />,
+    status: <BizFlowStatusChip label={tx("Ready")} tone="success" />,
   }));
 
   return (
@@ -32,8 +34,8 @@ export default function MerchantLayoutPage() {
       sidebarItems={modules}
       activeKey="layout"
       onNavigate={(item) => (item.path === '/app' ? router.replace('/app' as never) : router.push(item.path as never))}
-      title="Layout"
-      subtitle="Store arrangement and product placement"
+      title={tx("Layout")}
+      subtitle={tx("Store arrangement and product placement")}
       searchValue={search}
       onSearchChange={setSearch}
       profileName="Layout"
@@ -42,12 +44,12 @@ export default function MerchantLayoutPage() {
     >
       <View style={styles.content}>
         <View style={styles.kpiGrid}>
-          <BizFlowKpiCard label="Categories" value={`${categories.length}`} detail="Configured sections" />
-          <BizFlowKpiCard label="Products" value={`${products.length}`} detail="Assigned to layout" />
-          <BizFlowKpiCard label="Display zones" value="4" detail="High-value areas" tone="warning" />
+          <BizFlowKpiCard label={tx("Categories")} value={`${categories.length}`} detail={tx("Configured sections")} />
+          <BizFlowKpiCard label={tx("Products")} value={`${products.length}`} detail={tx("Assigned to layout")} />
+          <BizFlowKpiCard label={tx("Display zones")} value="4" detail={tx("High-value areas")} tone="warning" />
         </View>
 
-        <BizFlowSectionCard title="Category arrangement" subtitle="Arrange merchandise by store zones" action={<BizFlowButton title="Open setup" variant="secondary" onPress={() => router.push('/app/setup' as never)} />}>
+        <BizFlowSectionCard title={tx("Category arrangement")} subtitle={tx("Arrange merchandise by store zones")} action={<BizFlowButton title={tx("Open setup")} variant="secondary" onPress={() => router.push('/app/setup' as never)} />}>
           <BizFlowTable columns={[{ key: 'name', label: 'Category' }, { key: 'products', label: 'Products' }, { key: 'status', label: 'Status' }]} rows={categoryRows} />
         </BizFlowSectionCard>
       </View>

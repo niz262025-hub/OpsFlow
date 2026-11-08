@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Alert, ScrollView } from 'react-native';
 import { useData } from '@/src/contexts/DataContext';
 import { Button, Card, Input } from '@/src/components/UI';
+import { parseMinStockValue } from '@/src/utils/inventoryThreshold';
 
 export function CompanySetup() {
   const { company, updateCompany } = useData();
@@ -43,7 +44,7 @@ export function CompanySetup() {
         email: form.email.trim() || undefined,
         address: form.address.trim() || undefined,
         taxRate: parseFloat(form.taxRate) || 0,
-        lowStockThreshold: parseInt(form.lowStockThreshold, 10) || 10,
+        lowStockThreshold: parseMinStockValue(form.lowStockThreshold),
         receiptFooter: form.receiptFooter.trim() || undefined,
       });
       Alert.alert('Saved', 'Company settings updated');

@@ -1,3 +1,4 @@
+import { useLocale } from '@/src/contexts/LocaleContext';
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -16,6 +17,7 @@ const modules = [
 ];
 
 export default function CustomerSetup() {
+  const { tx } = useLocale();
   const router = useRouter();
   const { company, categories, suppliers, team } = useData();
   const [search, setSearch] = useState('');
@@ -28,8 +30,8 @@ export default function CustomerSetup() {
       sidebarItems={modules}
       activeKey="setup"
       onNavigate={(item) => (item.path === '/app' ? router.replace('/app' as never) : router.push(item.path as never))}
-      title="Setup"
-      subtitle="Store configuration and merchant operations"
+      title={tx("Setup")}
+      subtitle={tx("Store configuration and merchant operations")}
       searchValue={search}
       onSearchChange={setSearch}
       profileName="Setup"
@@ -38,23 +40,23 @@ export default function CustomerSetup() {
     >
       <View style={styles.content}>
         <View style={styles.kpiGrid}>
-          <BizFlowKpiCard label="Company" value={company?.name || 'BizFlow'} detail="Active workspace" />
-          <BizFlowKpiCard label="Categories" value={`${categories.length}`} detail="Product groups" />
-          <BizFlowKpiCard label="Suppliers" value={`${suppliers.length}`} detail="Vendor network" tone="success" />
-          <BizFlowKpiCard label="Team" value={`${team.length}`} detail="Active collaborators" tone="warning" />
+          <BizFlowKpiCard label={tx("Company")} value={company?.name || 'OpsFlow'} detail={tx("Active workspace")} />
+          <BizFlowKpiCard label={tx("Categories")} value={`${categories.length}`} detail={tx("Product groups")} />
+          <BizFlowKpiCard label={tx("Suppliers")} value={`${suppliers.length}`} detail={tx("Vendor network")} tone="success" />
+          <BizFlowKpiCard label={tx("Team")} value={`${team.length}`} detail={tx("Active collaborators")} tone="warning" />
         </View>
 
         <View style={styles.grid}>
-          <BizFlowSectionCard title="Categories" subtitle="Catalog organization" style={styles.card}>
-            <BizFlowTable columns={[{ key: 'name', label: 'Name' }, { key: 'status', label: 'Status' }]} rows={filteredCategories.map((category) => ({ name: category.name, status: <BizFlowStatusChip label="Active" tone="success" /> }))} />
+          <BizFlowSectionCard title={tx("Categories")} subtitle={tx("Catalog organization")} style={styles.card}>
+            <BizFlowTable columns={[{ key: 'name', label: 'Name' }, { key: 'status', label: 'Status' }]} rows={filteredCategories.map((category) => ({ name: category.name, status: <BizFlowStatusChip label={tx("Active")} tone="success" /> }))} />
           </BizFlowSectionCard>
-          <BizFlowSectionCard title="Suppliers" subtitle="Vendor contacts" style={styles.card}>
+          <BizFlowSectionCard title={tx("Suppliers")} subtitle={tx("Vendor contacts")} style={styles.card}>
             <BizFlowTable columns={[{ key: 'name', label: 'Name' }, { key: 'email', label: 'Email' }]} rows={filteredSuppliers.map((supplier) => ({ name: supplier.name, email: supplier.email || '—' }))} />
           </BizFlowSectionCard>
         </View>
 
-        <BizFlowSectionCard title="Configuration actions" subtitle="Keep the merchant experience aligned" action={<BizFlowButton title="Review layout" variant="secondary" onPress={() => router.push('/app/layout' as never)} />}>
-          <Text style={styles.body}>The setup workspace now mirrors the same design system, navigation, component styling, and merchant-ready workflows as the rest of the BizFlow experience.</Text>
+        <BizFlowSectionCard title={tx("Configuration actions")} subtitle={tx("Keep the merchant experience aligned")} action={<BizFlowButton title={tx("Review layout")} variant="secondary" onPress={() => router.push('/app/layout' as never)} />}>
+          <Text style={styles.body}>{tx("Manage company, suppliers and products.")}</Text>
         </BizFlowSectionCard>
       </View>
     </BizFlowDashboardShell>
@@ -65,6 +67,6 @@ const styles = StyleSheet.create({
   content: { gap: 16 },
   kpiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },
-  card: { flex: 1, minWidth: 320 },
+  card: { flex: 1, minWidth: 0 },
   body: { fontSize: 13, color: '#64748B', fontFamily: 'Inter', lineHeight: 20 },
 });

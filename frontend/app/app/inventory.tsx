@@ -1,9 +1,11 @@
+import { useLocale } from '@/src/contexts/LocaleContext';
 import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, TextInput, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useData } from '@/src/contexts/DataContext';
 import { BizFlowButton, BizFlowDashboardShell, BizFlowKpiCard, BizFlowSectionCard, BizFlowStatusChip, BizFlowTable } from '@/src/components/designSystem';
 import { formatMYR } from '@/src/utils/currency';
+import { getMinStockThreshold, isLowStock } from '@/src/utils/inventoryThreshold';
 
 const modules = [
   { key: 'dashboard', label: 'Dashboard', icon: 'dashboard' as const, path: '/app' },
@@ -17,18 +19,38 @@ const modules = [
 ];
 
 export default function CustomerInventory() {
+  const { tx } = useLocale();
   const router = useRouter();
-  const { products, stockMovements, adjustStock } = useData();
+  const { products, stockMovements, adjustStock, createProduct } = useData();
   const [search, setSearch] = useState('');
+  const [form, setForm] = useState({ name: '', sku: '', costPrice: '', sellingPrice: '', stock: '0', minStock: '10', unit: 'pcs' });
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  const saveProduct = async () => {
+    const numbers = [form.costPrice, form.sellingPrice, form.stock, form.minStock];
+    if (!form.name.trim() || !form.sku.trim() || !form.unit.trim() || numbers.some(value => !value.trim() || !Number.isFinite(Number(value)) || Number(value) < 0)) {
+      setMessage('Enter a name, SKU, unit and valid non-negative prices and quantities.');
+      return;
+    }
+    setSaving(true);
+    setMessage('');
+    try {
+      await createProduct({ name: form.name.trim(), sku: form.sku.trim(), unit: form.unit.trim(), costPrice: Number(form.costPrice), sellingPrice: Number(form.sellingPrice), stock: Number(form.stock), minStock: Number(form.minStock), status: 'active' });
+      setForm({ name: '', sku: '', costPrice: '', sellingPrice: '', stock: '0', minStock: '10', unit: 'pcs' });
+      setMessage('Product saved. It is now available in POS.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Product could not be saved.');
+    } finally { setSaving(false); }
+  };
 
   const filteredProducts = useMemo(() => products.filter((product) => `${product.name} ${product.sku}`.toLowerCase().includes(search.toLowerCase())).sort((a, b) => a.stock - b.stock), [products, search]);
-  const lowStockItems = useMemo(() => products.filter((product) => product.stock <= (product.minStock || 10)), [products]);
+  const lowStockItems = useMemo(() => products.filter((product) => isLowStock(product.stock, product.minStock)), [products]);
   const stockValue = useMemo(() => products.reduce((sum, product) => sum + (product.stock || 0) * (product.costPrice || 0), 0), [products]);
 
   const restock = async (product: any) => {
     try {
       await adjustStock(product.id, (product.stock || 0) + 1, 'Restocked from merchant inventory');
-    } catch (error) { }
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Restock failed.'); }
   };
 
   return (
@@ -36,8 +58,8 @@ export default function CustomerInventory() {
       sidebarItems={modules}
       activeKey="inventory"
       onNavigate={(item) => (item.path === '/app' ? router.replace('/app' as never) : router.push(item.path as never))}
-      title="Inventory"
-      subtitle="Stock health, movements, and alerts"
+      title={tx("Inventory")}
+      subtitle={tx("Stock health, movements, and alerts")}
       searchValue={search}
       onSearchChange={setSearch}
       profileName="Warehouse"
@@ -46,30 +68,56 @@ export default function CustomerInventory() {
     >
       <View style={styles.content}>
         <View style={styles.kpiGrid}>
-          <BizFlowKpiCard label="Tracked products" value={`${products.length}`} detail="In the current catalog" />
-          <BizFlowKpiCard label="Low stock alerts" value={`${lowStockItems.length}`} detail="Need replenishment" tone="warning" />
-          <BizFlowKpiCard label="Stock value" value={formatMYR(stockValue)} detail="At cost" />
-          <BizFlowKpiCard label="Movements" value={`${stockMovements.length}`} detail="Latest adjustments" tone="success" />
+          <BizFlowKpiCard label={tx("Tracked products")} value={`${products.length}`} detail={tx("In the current catalog")} />
+          <BizFlowKpiCard label={tx("Low stock alerts")} value={`${lowStockItems.length}`} detail={tx("Need replenishment")} tone="warning" />
+          <BizFlowKpiCard label={tx("Stock value")} value={formatMYR(stockValue)} detail={tx("At cost")} />
+          <BizFlowKpiCard label={tx("Movements")} value={`${stockMovements.length}`} detail={tx("Latest adjustments")} tone="success" />
         </View>
 
+        <BizFlowSectionCard title={tx("Add product")} subtitle={tx("Create a catalog item for inventory and POS")}>
+          <View style={styles.formGrid}>
+            {([
+              ['name', 'Product name'], ['sku', 'SKU'], ['costPrice', 'Cost price (RM)'],
+              ['sellingPrice', 'Selling price (RM)'], ['stock', 'Opening stock'],
+              ['minStock', 'Minimum stock'], ['unit', 'Unit'],
+            ] as const).map(([key, label]) => (
+              <View key={key} style={styles.field}>
+                <Text style={styles.listTitle}>{label}</Text>
+                <TextInput accessibilityLabel={label} value={form[key]} onChangeText={value => setForm(current => ({ ...current, [key]: value }))} style={styles.input} keyboardType={['costPrice', 'sellingPrice', 'stock', 'minStock'].includes(key) ? 'decimal-pad' : 'default'} />
+              </View>
+            ))}
+          </View>
+          <BizFlowButton title={saving ? 'Saving…' : 'Save product'} disabled={saving} onPress={saveProduct} />
+        </BizFlowSectionCard>
+        {!!message && <Text accessibilityRole="alert" style={styles.listTitle}>{message}</Text>}
         <View style={styles.grid}>
-          <BizFlowSectionCard title="Stock overview" subtitle="Current quantities" style={styles.card}>
-            <BizFlowTable columns={[{ key: 'product', label: 'Product' }, { key: 'stock', label: 'Stock' }, { key: 'status', label: 'Status' }, { key: 'action', label: 'Action' }]} rows={filteredProducts.map((product) => ({ product: product.name, stock: `${product.stock}`, status: <BizFlowStatusChip label={product.stock <= (product.minStock || 10) ? 'Low' : 'Healthy'} tone={product.stock <= (product.minStock || 10) ? 'warning' : 'success'} />, action: <BizFlowButton title="Restock" variant="secondary" onPress={() => restock(product)} /> }))} />
+          <BizFlowSectionCard title={tx("Stock overview")} subtitle={tx("Current quantities")} style={styles.card}>
+            <BizFlowTable columns={[{ key: 'product', label: 'Product' }, { key: 'stock', label: 'Stock' }, { key: 'status', label: 'Status' }, { key: 'action', label: 'Action' }]} rows={filteredProducts.map((product) => {
+          const threshold = getMinStockThreshold(product.minStock);
+          const isLow = isLowStock(product.stock, threshold);
+
+          return {
+            product: product.name,
+            stock: `${product.stock}`,
+            status: <BizFlowStatusChip label={isLow ? 'Low' : 'Healthy'} tone={isLow ? 'warning' : 'success'} />,
+            action: <BizFlowButton title={tx("Restock")} variant="secondary" onPress={() => restock(product)} />,
+          };
+            })} />
           </BizFlowSectionCard>
-          <BizFlowSectionCard title="Low stock alerts" subtitle="Prioritize replenishment" style={styles.card}>
+          <BizFlowSectionCard title={tx("Low stock alerts")} subtitle={tx("Prioritize replenishment")} style={styles.card}>
             <View style={styles.listWrap}>
               {lowStockItems.map((product) => (
                 <View key={product.id} style={styles.listItem}>
                   <Text style={styles.listTitle}>{product.name}</Text>
-                  <Text style={styles.listSubtitle}>Stock {product.stock} • Min {product.minStock}</Text>
+                  <Text style={styles.listSubtitle}>{tx("Stock")}{product.stock}{tx("• Min")}{product.minStock}</Text>
                 </View>
               ))}
-              {lowStockItems.length === 0 && <Text style={styles.emptyText}>All stock is healthy.</Text>}
+              {lowStockItems.length === 0 && <Text style={styles.emptyText}>{tx("All stock is healthy.")}</Text>}
             </View>
           </BizFlowSectionCard>
         </View>
 
-        <BizFlowSectionCard title="Stock movements" subtitle="Audit trail from the connected backend" style={styles.fullCard}>
+        <BizFlowSectionCard title={tx("Stock movements")} subtitle={tx("Audit trail from the connected backend")} style={styles.fullCard}>
           <BizFlowTable columns={[{ key: 'product', label: 'Product' }, { key: 'type', label: 'Type' }, { key: 'quantity', label: 'Quantity' }]} rows={stockMovements.slice(0, 6).map((movement) => ({ product: movement.productName, type: movement.type, quantity: `${movement.quantity}` }))} />
         </BizFlowSectionCard>
       </View>
@@ -78,11 +126,14 @@ export default function CustomerInventory() {
 }
 
 const styles = StyleSheet.create({
+  formGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 16 },
+  field: { flexGrow: 1, minWidth: 180, gap: 6 },
+  input: { borderWidth: 1, borderColor: '#CBD5E1', borderRadius: 8, padding: 12, color: '#071B49', backgroundColor: '#FFFFFF' },
   content: { gap: 16 },
   kpiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },
-  card: { flex: 1, minWidth: 320 },
-  fullCard: { minWidth: 280 },
+  card: { flex: 1, minWidth: 0 },
+  fullCard: { minWidth: 0 },
   listWrap: { gap: 10 },
   listItem: { paddingVertical: 8, borderBottomWidth: 1, borderColor: '#E2E8F0' },
   listTitle: { fontSize: 13, fontWeight: '700', color: '#0F172A', fontFamily: 'Inter' },
