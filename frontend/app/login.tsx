@@ -1,7 +1,16 @@
 import React from 'react';
-import { Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Linking, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+
+function openMyopsLogin() {
+  const url = 'https://www.myops.com.my/';
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    window.location.assign(url);
+    return;
+  }
+  void Linking.openURL(url);
+}
 
 export default function LoginRoute() {
   return (
@@ -9,7 +18,7 @@ export default function LoginRoute() {
       <View style={styles.container}>
         <Text style={styles.title}>Sign in through MYOPS</Text>
         <Text style={styles.subtitle}>Use your MYOPS account to open OpsFlow. Your MYOPS package controls app access.</Text>
-        <TouchableOpacity style={styles.button} onPress={() => { void Linking.openURL('https://www.myops.com.my/'); }}>
+        <TouchableOpacity style={styles.button} onPress={openMyopsLogin}>
           <Text style={styles.buttonText}>Continue to MYOPS</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.link} onPress={() => router.replace('/')}>
