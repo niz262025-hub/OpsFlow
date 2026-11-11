@@ -18,6 +18,15 @@ Executed locally:
 - Database migration/gateway, atomic quota and onboarding isolation regressions: PASS.
 - npm audit: improved from 42 findings (17 high, zero critical) to 24 findings (21 moderate, three low, zero high/critical). Audit results are dependency inventory findings, not proof of absence of application vulnerabilities.
 
-New browser CI is pending execution. Authenticated OpsFlow launch, POS transaction/receipt/inventory workflows, subscription lifecycle, live staging database policy verification and production release/backup checks remain open. Do not promote on build success alone.
+CI on commit 5c8416611d2d5e53020a733ae530b235a03db786 PASS: web/SSO contract checks run 43064210638, staging QA run 43064210732 and public browser run 43064210745. Browser logs confirm eight tests passed across all four emulated viewports. New schema-grant migration verification is local/live-staging PASS; CI will rerun on that follow-up commit. Authenticated OpsFlow launch, POS transaction/receipt/inventory workflows, subscription lifecycle, live staging database policy verification and production release/backup checks remain open. Do not promote on build success alone.
 
 Rollback: restore the parent commit's package files, lockfiles and Metro configuration, and redeploy the previous immutable deployment if this candidate is ever promoted. No database migration belongs to this change.
+
+
+## Staging database privilege repair
+
+Direct inspection of existing OpsFlow staging ojamkplflqafedmxbdxb found six historical grants: anon and authenticated each held TRUNCATE, REFERENCES and TRIGGER on public.business_payment_profiles. All public tables already had RLS, which does not protect these table-level operations.
+
+Captured the exact old grants in 2026-11-11-staging-schema-grants-rollback.sql before applying opsflow_remove_browser_schema_privileges to staging only. The migration revokes these schema operations across existing public tables while preserving data privileges, service-role access and row policies. Verification: excess browser schema grants zero; public tables without RLS zero; service-role SELECT on business_payment_profiles true. An isolated PGlite regression confirmed direct anonymous TRUNCATE is denied and service-role data access remains. No production database or data rows were modified.
+
+Supabase health advisors returned no findings. Security/performance advisors still include policy/RPC/password-protection and indexing findings in the shared staging database; these have not all been resolved or declared PASS. Do not treat dependency audit results as a complete security release approval.
