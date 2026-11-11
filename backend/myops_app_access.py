@@ -9,6 +9,7 @@ import os
 import re
 import secrets
 import time
+from contextvars import ContextVar
 from http.cookiejar import CookieJar
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
@@ -23,6 +24,7 @@ TICKET_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", re.I)
 USER_REF_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
 MYOPS_PATHS = {"/api/app/redeem", "/api/app/entitlement", "/api/app/trial-quota"}
+vercel_request_oidc = ContextVar('vercel_request_oidc', default='')
 
 
 class MyopsAccessError(Exception):
@@ -125,14 +127,22 @@ def preview_opener(origin):
 
 def call_myops(path: str, body: dict[str, Any], *, opener: Callable[..., Any] | None = None) -> dict[str, Any]:
     origin, _, _, _ = _load_signing_config()
+    headers = signed_headers(path, body)
+    oidc = vercel_request_oidc.get()
+    if oidc:
+        # The platform validates this short-lived identity against the target's
+        # Trusted Sources. App-level Ed25519 authentication remains mandatory.
+        if os.getenv('VERCEL_ENV') != 'preview' or not urlsplit(origin).hostname.endswith('.vercel.app'):
+            raise MyopsAccessError('OIDC transport is restricted to Vercel previews')
+        headers['x-vercel-trusted-oidc-idp-token'] = oidc
     request = Request(
         f"{origin}{path}",
         data=json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode("utf-8"),
-        headers=signed_headers(path, body),
+        headers=headers,
         method="POST",
     )
     try:
-        send = opener or preview_opener(origin)
+        send = opener or (build_opener(SameOriginRedirect(origin)).open if oidc else preview_opener(origin))
         with send(request, timeout=20 if os.getenv('VERCEL_ENV') == 'preview' else 8) as response:
             payload = json.loads(response.read())
             if not isinstance(payload, dict):

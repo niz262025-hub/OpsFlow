@@ -10,14 +10,30 @@ from datetime import datetime, timezone
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Request as ApiRequest
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
-from myops_app_access import call_myops, validate_redeem_response, is_launch_ticket, MyopsAccessError
+from myops_app_access import call_myops, validate_redeem_response, is_launch_ticket, MyopsAccessError, vercel_request_oidc
 
 app = FastAPI(title='OpsFlow API')
 bearer = HTTPBearer()
+
+
+@app.middleware('http')
+async def request_security_context(request: ApiRequest, call_next):
+    # ContextVar keeps concurrent users' platform identities separate and is
+    # propagated by run_in_threadpool. Never log or persist the platform token.
+    token = vercel_request_oidc.set(request.headers.get('x-vercel-oidc-token', '')
+        if os.getenv('VERCEL_ENV') == 'preview' else '')
+    try:
+        response = await call_next(request)
+        response.headers['Cache-Control'] = 'private, no-store'
+        response.headers['Referrer-Policy'] = 'no-referrer'
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        return response
+    finally:
+        vercel_request_oidc.reset(token)
 
 
 STAGING_PROJECT_REF = 'ojamkplflqafedmxbdxb'
