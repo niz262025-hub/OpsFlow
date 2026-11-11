@@ -5,6 +5,19 @@ const { FileStore } = require('metro-cache');
 
 const config = getDefaultConfig(__dirname);
 
+// Expo Router 6 expects query-string's older CommonJS named exports. Keep that
+// interface while using the maintained decoder in query-string 9.
+const queryStringCompat = path.join(__dirname, 'src/utils/query-string-compat.js');
+const resolveRequest = config.resolver.resolveRequest;
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (moduleName === 'query-string' && context.originModulePath !== queryStringCompat) {
+    return { type: 'sourceFile', filePath: queryStringCompat };
+  }
+  return resolveRequest
+    ? resolveRequest(context, moduleName, platform)
+    : context.resolveRequest(context, moduleName, platform);
+};
+
 // Use a stable on-disk store (shared across web/android)
 const root = process.env.METRO_CACHE_ROOT || path.join(__dirname, '.metro-cache');
 config.cacheStores = [
