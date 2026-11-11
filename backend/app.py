@@ -254,17 +254,17 @@ async def complete_onboarding(body: CompanyOnboarding, digest: str = Depends(tok
 async def data(body: DocumentRequest, digest: str = Depends(token_hash)):
     if body.action not in ('get', 'list', 'commit'):
         raise HTTPException(400, 'Unsupported operation')
-    if body.action == 'commit' and os.getenv('OPSFLOW_TRIAL_ENFORCEMENT') == 'true':
-        if os.getenv('VERCEL_ENV') != 'preview':
-            raise HTTPException(503, 'Trial write configuration is staging-only')
+    if body.action == 'commit':
         context = await run_in_threadpool(session_context, digest)
         try:
             access = await run_in_threadpool(call_myops, '/api/app/entitlement', {
-                'session_id': context['session_id'], 'product': 'opsflow', 'activity': False, 'sensitive': False})
+                'session_id': context['session_id'], 'product': 'opsflow', 'activity': True, 'sensitive': True})
             if access.get('entitled') is not True or access.get('session_active') is not True:
                 raise HTTPException(403, 'MYOPS access is no longer active')
             # Require an explicit central mode; never infer paid access from absence.
             if access.get('access_mode') == 'trial':
+                if os.getenv('VERCEL_ENV') != 'preview' or os.getenv('OPSFLOW_TRIAL_ENFORCEMENT') != 'true':
+                    raise HTTPException(403, 'Trial writes are not enabled for this environment')
                 trial = access.get('trial')
                 try:
                     if not isinstance(trial, dict) or trial.get('policy_version') != 1:
@@ -283,7 +283,7 @@ async def data(body: DocumentRequest, digest: str = Depends(token_hash)):
             elif access.get('access_mode') != 'paid':
                 raise HTTPException(503, 'Central access mode is unavailable')
         except MyopsAccessError:
-            raise HTTPException(403, 'Trial limit reached or access unavailable; check MYOPS') from None
+            raise HTTPException(503, 'MYOPS access could not be verified') from None
     return await run_in_threadpool(database, 'rpc/opsflow_document_gateway', {
         'p_token_hash': digest, 'p_action': body.action, 'p_payload': body.payload})
 
