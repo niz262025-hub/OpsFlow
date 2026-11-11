@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useData } from '@/src/contexts/DataContext';
+import { useData, type Sale } from '@/src/contexts/DataContext';
 import { BizFlowButton, BizFlowDashboardShell, BizFlowKpiCard, BizFlowSectionCard, BizFlowStatusChip, BizFlowTable } from '@/src/components/designSystem';
 import { formatMYR } from '@/src/utils/currency';
 
@@ -23,6 +23,7 @@ export default function CustomerPos() {
   const [cart, setCart] = useState<Record<string, { product: any; quantity: number }>>({});
   const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'QR' | 'Bank Transfer'>('Cash');
   const [statusMessage, setStatusMessage] = useState('');
+  const [completedSale, setCompletedSale] = useState<Sale | null>(null);
 
   const activeProducts = useMemo(() => products.filter((product) => product.status === 'active'), [products]);
   const filteredProducts = useMemo(() => activeProducts.filter((product) => `${product.name} ${product.sku}`.toLowerCase().includes(search.toLowerCase())), [activeProducts, search]);
@@ -53,12 +54,13 @@ export default function CustomerPos() {
       return;
     }
     try {
-      await createSale({
+      const sale = await createSale({
         items: cartItems.map((item) => ({ productId: item.product.id, productName: item.product.name, sku: item.product.sku, quantity: item.quantity, unitPrice: item.product.sellingPrice, costPrice: item.product.costPrice, total: item.product.sellingPrice * item.quantity })),
         discount: 0,
         tax,
         paymentMethod,
       });
+      setCompletedSale(sale);
       setCart({});
       setStatusMessage(`Checkout complete via ${paymentMethod}.`);
     } catch (error) {
@@ -125,10 +127,20 @@ export default function CustomerPos() {
         <BizFlowSectionCard title="Receipt preview" subtitle="Sales and stock updates are saved to your company" style={styles.fullCard}>
           <View style={styles.receiptCard}>
             <Text style={styles.receiptTitle}>OpsFlow Receipt</Text>
-            <Text style={styles.receiptBody}>Order prepared for {paymentMethod}</Text>
-            <Text style={styles.receiptBody}>Items: {cartItems.length || 0}</Text>
-            <Text style={styles.receiptBody}>Total due: {formatMYR(total)}</Text>
-            <BizFlowStatusChip label={cartItems.length ? 'Ready to print' : 'Awaiting order'} tone={cartItems.length ? 'success' : 'warning'} />
+            {completedSale ? <>
+              <Text style={styles.receiptBody}>Reference: {completedSale.saleNumber}</Text>
+              <Text style={styles.receiptBody}>Paid via {completedSale.paymentMethod}</Text>
+              {completedSale.items.map((item) => <Text key={item.productId} style={styles.receiptBody}>{item.productName} × {item.quantity}: {formatMYR(item.total)}</Text>)}
+              <Text style={styles.receiptBody}>Subtotal: {formatMYR(completedSale.subtotal)}</Text>
+              <Text style={styles.receiptBody}>Tax: {formatMYR(completedSale.tax)}</Text>
+              <Text style={styles.receiptBody}>Total paid: {formatMYR(completedSale.total)}</Text>
+              <BizFlowStatusChip label="Payment complete" tone="success" />
+            </> : <>
+              <Text style={styles.receiptBody}>Order prepared for {paymentMethod}</Text>
+              <Text style={styles.receiptBody}>Items: {cartItems.length || 0}</Text>
+              <Text style={styles.receiptBody}>Total due: {formatMYR(total)}</Text>
+              <BizFlowStatusChip label={cartItems.length ? 'Order preview' : 'Awaiting order'} tone={cartItems.length ? 'success' : 'warning'} />
+            </>}
           </View>
         </BizFlowSectionCard>
       </View>
