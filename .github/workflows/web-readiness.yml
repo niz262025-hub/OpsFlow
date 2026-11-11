@@ -21,6 +21,7 @@ jobs:
       - run: node scripts/test-supabase-gateway.mjs
       - run: node scripts/test-atomic-trial.mjs
       - run: node scripts/test-onboarding.mjs
+      - run: node scripts/test-browser-schema-privileges.mjs
       - run: npm test
       - run: npx tsc --noEmit
       - run: npm run lint
