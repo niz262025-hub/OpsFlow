@@ -279,7 +279,7 @@ async def data(body: DocumentRequest, digest: str = Depends(token_hash)):
                 raise HTTPException(403, 'MYOPS access is no longer active')
             # Require an explicit central mode; never infer paid access from absence.
             if access.get('access_mode') == 'trial':
-                if os.getenv('VERCEL_ENV') != 'preview' or os.getenv('OPSFLOW_TRIAL_ENFORCEMENT') != 'true':
+                if os.getenv('VERCEL_ENV') not in ('preview', 'production') or os.getenv('OPSFLOW_TRIAL_ENFORCEMENT') != 'true':
                     raise HTTPException(403, 'Trial writes are not enabled for this environment')
                 trial = access.get('trial')
                 try:
