@@ -1,7 +1,40 @@
 {
+  "services": {
+    "web": {
+      "root": "frontend",
+      "installCommand": "npm ci --ignore-scripts",
+      "buildCommand": "npx expo export --platform web --output-dir dist",
+      "outputDirectory": "dist",
+      "rewrites": [
+        {
+          "source": "/(.*)",
+          "destination": "/index.html"
+        }
+      ]
+    },
+    "api": {
+      "root": "backend",
+      "entrypoint": "app:app"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": {
+        "service": "api"
+      }
+    },
+    {
+      "source": "/(.*)",
+      "destination": {
+        "service": "web"
+      }
+    }
+  ],
   "git": {
     "deploymentEnabled": {
-      "main": false
+      "main": false,
+      "feat/opsflow-vercel-migration": false
     }
   }
 }

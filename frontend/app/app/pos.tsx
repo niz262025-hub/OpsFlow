@@ -1,7 +1,7 @@
-import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useMemo, useRef, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useData } from '@/src/contexts/DataContext';
+import { useData, type Sale } from '@/src/contexts/DataContext';
 import { BizFlowButton, BizFlowDashboardShell, BizFlowKpiCard, BizFlowSectionCard, BizFlowStatusChip, BizFlowTable } from '@/src/components/designSystem';
 import { formatMYR } from '@/src/utils/currency';
 
@@ -18,11 +18,15 @@ const modules = [
 
 export default function CustomerPos() {
   const router = useRouter();
-  const { products, createSale } = useData();
+  const { products, sales, createSale, refundSale } = useData();
+  const busyRef = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const [refundReason, setRefundReason] = useState('');
   const [search, setSearch] = useState('');
   const [cart, setCart] = useState<Record<string, { product: any; quantity: number }>>({});
   const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'QR' | 'Bank Transfer'>('Cash');
   const [statusMessage, setStatusMessage] = useState('');
+  const [completedSale, setCompletedSale] = useState<Sale | null>(null);
 
   const activeProducts = useMemo(() => products.filter((product) => product.status === 'active'), [products]);
   const filteredProducts = useMemo(() => activeProducts.filter((product) => `${product.name} ${product.sku}`.toLowerCase().includes(search.toLowerCase())), [activeProducts, search]);
@@ -32,6 +36,7 @@ export default function CustomerPos() {
   const total = subtotal + tax;
 
   const addToCart = (product: any) => {
+    if (busyRef.current) return;
     setCart((current) => {
       const existing = current[product.id];
       return { ...current, [product.id]: { product, quantity: (existing?.quantity || 0) + 1 } };
@@ -52,18 +57,34 @@ export default function CustomerPos() {
       setStatusMessage('Add at least one product before checkout.');
       return;
     }
+    if (busyRef.current) return;
+    busyRef.current = true; setBusy(true);
     try {
-      await createSale({
+      const sale = await createSale({
         items: cartItems.map((item) => ({ productId: item.product.id, productName: item.product.name, sku: item.product.sku, quantity: item.quantity, unitPrice: item.product.sellingPrice, costPrice: item.product.costPrice, total: item.product.sellingPrice * item.quantity })),
         discount: 0,
         tax,
         paymentMethod,
       });
+      setCompletedSale(sale);
       setCart({});
       setStatusMessage(`Checkout complete via ${paymentMethod}.`);
     } catch (error) {
-      setStatusMessage('Checkout failed. Please try again.');
-    }
+      setStatusMessage(error instanceof Error ? error.message : 'Checkout failed. Please try again.');
+    } finally { busyRef.current = false; setBusy(false); }
+  };
+
+  const handleRefund = async (sale: Sale) => {
+    if (busyRef.current) return;
+    busyRef.current = true; setBusy(true);
+    try {
+      const reference = await refundSale(sale.id, refundReason);
+      setCompletedSale({ ...sale, status: 'REFUNDED', refundReference: reference });
+      setRefundReason('');
+      setStatusMessage(`Refund recorded: ${reference}. Stock and ledger reversed.`);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : 'Refund could not be recorded.');
+    } finally { busyRef.current = false; setBusy(false); }
   };
 
   return (
@@ -115,20 +136,35 @@ export default function CustomerPos() {
               <View style={styles.summaryRow}><Text style={styles.summaryLabel}>Total</Text><Text style={styles.summaryValue}>{formatMYR(total)}</Text></View>
               {statusMessage ? <Text style={styles.statusText}>{statusMessage}</Text> : null}
               <View style={styles.actionsRow}>
-                <BizFlowButton title="Checkout" onPress={handleCheckout} />
-                <BizFlowButton title="Clear cart" variant="secondary" onPress={() => setCart({})} />
+                <BizFlowButton disabled={busy} title={busy ? "Saving…" : "Checkout"} onPress={handleCheckout} />
+                <BizFlowButton disabled={busy} title="Clear cart" variant="secondary" onPress={() => setCart({})} />
               </View>
             </View>
           </BizFlowSectionCard>
         </View>
 
-        <BizFlowSectionCard title="Receipt preview" subtitle="The sale will be saved to the connected Firebase backend" style={styles.fullCard}>
+        <BizFlowSectionCard title="Sales & refunds" subtitle="Full returns only. Return the customer's payment separately before recording a refund." style={styles.fullCard}>
+          <TextInput accessibilityLabel="Refund reason" placeholder="Refund reason" value={refundReason} onChangeText={setRefundReason} maxLength={200} style={styles.refundInput} />
+          <BizFlowTable columns={[{ key: 'reference', label: 'Receipt' }, { key: 'amount', label: 'Total' }, { key: 'action', label: 'Refund' }]} rows={sales.slice(0, 20).map(sale => ({ reference: sale.saleNumber, amount: formatMYR(sale.total), action: sale.status === 'REFUNDED' ? <BizFlowStatusChip label="Refunded" tone="warning" /> : <BizFlowButton title={`Record refund ${sale.saleNumber}`} disabled={busy} variant="secondary" onPress={() => handleRefund(sale)} /> }))} />
+        </BizFlowSectionCard>
+
+        <BizFlowSectionCard title="Receipt preview" subtitle="Sales and stock updates are saved to your company" style={styles.fullCard}>
           <View style={styles.receiptCard}>
-            <Text style={styles.receiptTitle}>BizFlow Receipt</Text>
-            <Text style={styles.receiptBody}>Order prepared for {paymentMethod}</Text>
-            <Text style={styles.receiptBody}>Items: {cartItems.length || 0}</Text>
-            <Text style={styles.receiptBody}>Total due: {formatMYR(total)}</Text>
-            <BizFlowStatusChip label={cartItems.length ? 'Ready to print' : 'Awaiting order'} tone={cartItems.length ? 'success' : 'warning'} />
+            <Text style={styles.receiptTitle}>OpsFlow Receipt</Text>
+            {completedSale ? <>
+              <Text style={styles.receiptBody}>Reference: {completedSale.saleNumber}</Text>
+              <Text style={styles.receiptBody}>Paid via {completedSale.paymentMethod}</Text>
+              {completedSale.items.map((item) => <Text key={item.productId} style={styles.receiptBody}>{item.productName} × {item.quantity}: {formatMYR(item.total)}</Text>)}
+              <Text style={styles.receiptBody}>Subtotal: {formatMYR(completedSale.subtotal)}</Text>
+              <Text style={styles.receiptBody}>Tax: {formatMYR(completedSale.tax)}</Text>
+              <Text style={styles.receiptBody}>Total paid: {formatMYR(completedSale.total)}</Text>
+              <BizFlowStatusChip label={completedSale.status === 'REFUNDED' ? 'Refunded' : 'Payment complete'} tone={completedSale.status === 'REFUNDED' ? 'warning' : 'success'} />
+            </> : <>
+              <Text style={styles.receiptBody}>Order prepared for {paymentMethod}</Text>
+              <Text style={styles.receiptBody}>Items: {cartItems.length || 0}</Text>
+              <Text style={styles.receiptBody}>Total due: {formatMYR(total)}</Text>
+              <BizFlowStatusChip label={cartItems.length ? 'Order preview' : 'Awaiting order'} tone={cartItems.length ? 'success' : 'warning'} />
+            </>}
           </View>
         </BizFlowSectionCard>
       </View>
@@ -138,6 +174,7 @@ export default function CustomerPos() {
 
 const styles = StyleSheet.create({
   content: { gap: 16 },
+  refundInput: { borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 10, padding: 12, marginBottom: 12, color: '#0F172A' },
   kpiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },
   card: { flex: 1, minWidth: 320 },

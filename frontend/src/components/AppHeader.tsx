@@ -1,15 +1,13 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
 import { useTheme } from '@/src/contexts/ThemeContext';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { useData } from '@/src/contexts/DataContext';
 
 export function AppHeader() {
   const { theme } = useTheme();
-  const router = useRouter();
   const { logout, profile } = useAuth();
   const { company } = useData();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -27,7 +25,6 @@ export function AppHeader() {
     try {
       setMenuOpen(false);
       await logout();
-      router.replace('/login');
     } catch (error: any) {
       Alert.alert('Sign out failed', error?.message || 'Could not sign out right now.');
     } finally {
@@ -79,6 +76,20 @@ export function AppHeader() {
                   <Text style={[styles.dropdownCompany, { color: theme.colors.textSecondary }]} numberOfLines={1}>{companyName}</Text>
                   <Text style={[styles.dropdownRole, { color: theme.colors.primary }]}>{roleLabel}</Text>
                 </View>
+                <TouchableOpacity
+                  accessibilityRole="link"
+                  testID="back-to-myops-button"
+                  onPress={() => {
+                    setMenuOpen(false);
+                    void Linking.openURL('https://www.myops.com.my/').catch(() => {
+                      Alert.alert('Unable to open MYOPS', 'Please open https://www.myops.com.my in your browser.');
+                    });
+                  }}
+                  style={styles.logoutRow}
+                >
+                  <MaterialIcons name="arrow-back" size={18} color={theme.colors.primary} />
+                  <Text style={[styles.logoutText, { color: theme.colors.primary }]}>Back to MYOPS</Text>
+                </TouchableOpacity>
                 <TouchableOpacity
                   accessibilityRole="button"
                   testID="logout-button"

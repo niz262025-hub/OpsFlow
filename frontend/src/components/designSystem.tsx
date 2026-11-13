@@ -1,4 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { useAuth } from '@/src/contexts/AuthContext';
+import { LinearGradient } from 'expo-linear-gradient';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, ViewStyle, StyleProp, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -48,6 +50,8 @@ export function BizFlowButton({
 
   return (
     <TouchableOpacity
+      accessibilityRole="button"
+      accessibilityLabel={title}
       onPress={onPress}
       disabled={disabled}
       activeOpacity={0.85}
@@ -65,6 +69,7 @@ export function BizFlowButton({
         style,
       ]}
     >
+      {variant === 'primary' && <LinearGradient pointerEvents="none" colors={['#FF5FA9', '#FF3D8D', '#FF8D2B', '#8D4DFF']} locations={[0, 0.35, 0.72, 1]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: 999 }]} />}
       {icon ? <MaterialIcons name={icon} size={18} color={textColor} /> : null}
       <Text style={[styles.buttonText, { color: textColor }]}>{title}</Text>
     </TouchableOpacity>
@@ -175,20 +180,21 @@ export function BizFlowChart({ data, labels }: { data: number[]; labels: string[
 export function BizFlowSidebar({ items, activeKey, onNavigate }: { items: NavItem[]; activeKey: string; onNavigate: (item: NavItem) => void }) {
   const { theme } = useTheme();
   return (
-    <View style={[styles.sidebar, { backgroundColor: '#081A3A', borderRightColor: '#12264C' }]}> 
+    <View style={[styles.sidebar, { backgroundColor: '#071B49', borderRightColor: '#12264C' }]}> 
       <View style={styles.brandWrap}> 
         <View style={[styles.brandIcon, { backgroundColor: 'rgba(255,255,255,0.14)' }]}> 
           <MaterialIcons name="store" size={22} color={'#FFFFFF'} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.brandTitle}>BizFlow</Text>
+          <Text style={styles.brandTitle}>OpsFlow</Text>
           <Text style={styles.brandSubtitle}>Merchant operations</Text>
         </View>
       </View>
       {items.map((item) => {
         const active = item.key === activeKey;
         return (
-          <Pressable key={item.key} style={[styles.navItem, active && { backgroundColor: '#12315E' }]} onPress={() => onNavigate(item)}>
+          <Pressable key={item.key} style={[styles.navItem, active && { backgroundColor: '#FF3D8D' }]} onPress={() => onNavigate(item)}>
+            {active && <LinearGradient pointerEvents="none" colors={['#FF5FA9', '#FF3D8D', '#FF8D2B', '#8D4DFF']} locations={[0, 0.35, 0.72, 1]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[StyleSheet.absoluteFillObject, { borderRadius: 12 }]} />}
             <MaterialIcons name={item.icon} size={18} color={active ? '#FFFFFF' : '#93A6C8'} />
             <Text style={[styles.navLabel, active && { color: '#FFFFFF' }]}>{item.label}</Text>
           </Pressable>
@@ -200,6 +206,14 @@ export function BizFlowSidebar({ items, activeKey, onNavigate }: { items: NavIte
 
 export function BizFlowTopBar({ title, subtitle, searchValue, onSearchChange, profileName, profileRole, avatarLabel, actions }: { title: string; subtitle?: string; searchValue?: string; onSearchChange?: (value: string) => void; profileName?: string; profileRole?: string; avatarLabel?: string; actions?: React.ReactNode }) {
   const { theme } = useTheme();
+  const { logout } = useAuth();
+  const [loggingOut, setLoggingOut] = useState(false);
+  const handleLogout = async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try { await logout(); }
+    finally { setLoggingOut(false); }
+  };
   return (
     <View style={styles.topBar}> 
       <View style={{ flex: 1 }}>
@@ -213,10 +227,11 @@ export function BizFlowTopBar({ title, subtitle, searchValue, onSearchChange, pr
         </View>
       ) : null}
       {actions}
+      <BizFlowButton title={loggingOut ? 'Logging out…' : 'Logout'} icon="logout" variant="secondary" disabled={loggingOut} onPress={handleLogout} />
       {(profileName || profileRole) ? (
         <View style={[styles.profileChip, { backgroundColor: '#FFFFFF', borderColor: '#E2E8F0' }]}> 
-          <View style={[styles.profileAvatar, { backgroundColor: '#DBEAFE' }]}> 
-            <Text style={[styles.profileAvatarText, { color: '#2563EB' }]}>{avatarLabel || profileName?.charAt(0).toUpperCase() || 'U'}</Text>
+          <View style={[styles.profileAvatar, { backgroundColor: '#EEEAF6' }]}> 
+            <Text style={[styles.profileAvatarText, { color: '#071B49' }]}>{avatarLabel || profileName?.charAt(0).toUpperCase() || 'U'}</Text>
           </View>
           <View>
             <Text style={styles.profileName}>{profileName}</Text>
@@ -231,6 +246,7 @@ export function BizFlowTopBar({ title, subtitle, searchValue, onSearchChange, pr
 export function BizFlowDashboardShell({ sidebarItems, activeKey, onNavigate, title, subtitle, searchValue, onSearchChange, profileName, profileRole, avatarLabel, actions, children }: { sidebarItems: NavItem[]; activeKey: string; onNavigate: (item: NavItem) => void; title: string; subtitle?: string; searchValue?: string; onSearchChange?: (value: string) => void; profileName?: string; profileRole?: string; avatarLabel?: string; actions?: React.ReactNode; children: React.ReactNode }) {
   return (
     <SafeAreaView style={styles.safeArea}> 
+      <LinearGradient pointerEvents="none" colors={['#FDE1C4', '#FDEEE9', '#FBF1F6']} locations={[0, 0.48, 1]} style={StyleSheet.absoluteFillObject} />
       <View style={styles.shell}> 
         <BizFlowSidebar items={sidebarItems} activeKey={activeKey} onNavigate={onNavigate} />
         <ScrollView style={styles.main} contentContainerStyle={styles.mainContent}> 
@@ -243,50 +259,50 @@ export function BizFlowDashboardShell({ sidebarItems, activeKey, onNavigate, tit
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#F8FAFC' },
+  safeArea: { flex: 1, backgroundColor: '#FFFAF7' },
   shell: { flex: 1, flexDirection: 'row' },
   sidebar: { width: 260, borderRightWidth: 1, paddingHorizontal: 16, paddingTop: 24 },
   brandWrap: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 24 },
   brandIcon: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  brandTitle: { fontSize: 18, fontWeight: '800', color: '#FFFFFF', fontFamily: 'Inter' },
-  brandSubtitle: { fontSize: 12, color: '#93A6C8', fontFamily: 'Inter' },
+  brandTitle: { fontSize: 18, fontWeight: '800', color: '#FFFFFF', fontFamily: 'system-ui' },
+  brandSubtitle: { fontSize: 12, color: '#93A6C8', fontFamily: 'system-ui' },
   navItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, paddingHorizontal: 12, borderRadius: 12, marginBottom: 4 },
-  navLabel: { fontSize: 14, fontWeight: '600', color: '#93A6C8', fontFamily: 'Inter' },
-  main: { flex: 1, backgroundColor: '#F8FAFC' },
+  navLabel: { fontSize: 14, fontWeight: '600', color: '#93A6C8', fontFamily: 'system-ui' },
+  main: { flex: 1, backgroundColor: 'transparent' },
   mainContent: { padding: 20, gap: 16, paddingBottom: 32 },
   topBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' },
-  topBarTitle: { fontSize: 24, fontWeight: '800', color: '#0F172A', fontFamily: 'Inter' },
-  topBarSubtitle: { fontSize: 13, color: '#64748B', marginTop: 2, fontFamily: 'Inter' },
+  topBarTitle: { fontSize: 24, fontWeight: '800', color: '#071B49', fontFamily: 'system-ui' },
+  topBarSubtitle: { fontSize: 13, color: '#64748B', marginTop: 2, fontFamily: 'system-ui' },
   searchBox: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, minWidth: 240 },
-  searchInput: { flex: 1, color: '#0F172A', fontSize: 14, fontFamily: 'Inter' },
+  searchInput: { flex: 1, color: '#071B49', fontSize: 14, fontFamily: 'system-ui' },
   profileChip: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 8, borderWidth: 1 },
   profileAvatar: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  profileAvatarText: { fontSize: 14, fontWeight: '700', fontFamily: 'Inter' },
-  profileName: { fontSize: 13, fontWeight: '700', color: '#0F172A', fontFamily: 'Inter' },
-  profileRole: { fontSize: 12, color: '#64748B', fontFamily: 'Inter' },
+  profileAvatarText: { fontSize: 14, fontWeight: '700', fontFamily: 'system-ui' },
+  profileName: { fontSize: 13, fontWeight: '700', color: '#071B49', fontFamily: 'system-ui' },
+  profileRole: { fontSize: 12, color: '#64748B', fontFamily: 'system-ui' },
   button: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: 999, gap: 8 },
-  buttonText: { fontSize: 14, fontWeight: '700', fontFamily: 'Inter' },
+  buttonText: { fontSize: 14, fontWeight: '700', fontFamily: 'system-ui' },
   badge: { alignSelf: 'flex-start', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
-  badgeText: { fontSize: 12, fontWeight: '700', fontFamily: 'Inter' },
+  badgeText: { fontSize: 12, fontWeight: '700', fontFamily: 'system-ui' },
   statusChip: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
   statusDot: { width: 8, height: 8, borderRadius: 4 },
-  statusText: { fontSize: 12, fontWeight: '700', fontFamily: 'Inter' },
+  statusText: { fontSize: 12, fontWeight: '700', fontFamily: 'system-ui' },
   kpiCard: { flex: 1, minWidth: 180, backgroundColor: '#FFFFFF', borderRadius: 18, padding: 16, borderWidth: 1, position: 'relative' },
   kpiAccent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, borderTopLeftRadius: 18, borderBottomLeftRadius: 18 },
-  kpiLabel: { fontSize: 12, color: '#64748B', fontFamily: 'Inter', marginBottom: 6 },
-  kpiValue: { fontSize: 24, fontWeight: '800', color: '#0F172A', fontFamily: 'Inter' },
-  kpiDetail: { fontSize: 12, color: '#64748B', marginTop: 6, fontFamily: 'Inter' },
+  kpiLabel: { fontSize: 12, color: '#64748B', fontFamily: 'system-ui', marginBottom: 6 },
+  kpiValue: { fontSize: 24, fontWeight: '800', color: '#071B49', fontFamily: 'system-ui' },
+  kpiDetail: { fontSize: 12, color: '#64748B', marginTop: 6, fontFamily: 'system-ui' },
   sectionCard: { borderRadius: 20, padding: 18, borderWidth: 1 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  sectionTitle: { fontSize: 16, fontWeight: '700', color: '#0F172A', fontFamily: 'Inter' },
-  sectionSubtitle: { fontSize: 12, color: '#64748B', marginTop: 2, fontFamily: 'Inter' },
+  sectionTitle: { fontSize: 16, fontWeight: '700', color: '#071B49', fontFamily: 'system-ui' },
+  sectionSubtitle: { fontSize: 12, color: '#64748B', marginTop: 2, fontFamily: 'system-ui' },
   table: { borderRadius: 14, overflow: 'hidden', borderWidth: 1 },
   tableHeader: { flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 10 },
-  tableHeaderText: { flex: 1, fontSize: 12, fontWeight: '700', color: '#475569', fontFamily: 'Inter' },
+  tableHeaderText: { flex: 1, fontSize: 12, fontWeight: '700', color: '#475569', fontFamily: 'system-ui' },
   tableRow: { flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 12, borderTopWidth: 1 },
-  tableCell: { flex: 1, fontSize: 13, color: '#0F172A', fontFamily: 'Inter' },
+  tableCell: { flex: 1, fontSize: 13, color: '#071B49', fontFamily: 'system-ui' },
   chartRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', height: 140, gap: 10, marginTop: 8 },
   chartBarWrap: { flex: 1, alignItems: 'center', gap: 8 },
-  chartBar: { width: '100%', maxWidth: 28, borderRadius: 999, minHeight: 22 },
-  chartLabel: { fontSize: 11, color: '#64748B', fontFamily: 'Inter' },
+  chartBar: { width: '100%', maxWidth: 28, borderRadius: 999, minHeight: 0 },
+  chartLabel: { fontSize: 11, color: '#64748B', fontFamily: 'system-ui' },
 });
