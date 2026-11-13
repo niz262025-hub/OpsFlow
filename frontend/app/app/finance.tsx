@@ -3,6 +3,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useData } from '@/src/contexts/DataContext';
 import { BizFlowDashboardShell, BizFlowKpiCard, BizFlowSectionCard, BizFlowStatusChip, BizFlowTable } from '@/src/components/designSystem';
+import { cashLedgerBalance } from '@/src/utils/dashboardTotals';
 import { formatMYR } from '@/src/utils/currency';
 
 const modules = [
@@ -24,7 +25,7 @@ export default function CustomerFinance() {
   const filteredExpenses = useMemo(() => expenses.filter((expense) => `${expense.description ?? ''} ${expense.category}`.toLowerCase().includes(search.toLowerCase())).slice(0, 8), [expenses, search]);
   const totals = useMemo(() => ({
     spend: expenses.reduce((sum, expense) => sum + (expense.amount || 0), 0),
-    cash: cashEntries.reduce((sum, entry) => sum + (entry.amount || 0), 0),
+    cash: cashLedgerBalance(cashEntries),
     accounts: bankAccounts.length,
   }), [bankAccounts.length, cashEntries, expenses]);
 

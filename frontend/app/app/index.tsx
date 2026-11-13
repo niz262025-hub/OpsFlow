@@ -93,7 +93,7 @@ export default function CustomerDashboard() {
 
         <View style={styles.grid}>
           <BizFlowSectionCard title="Recent transactions" subtitle="Latest activity" style={styles.card}>
-            <BizFlowTable columns={[{ key: 'ref', label: 'Reference' }, { key: 'status', label: 'Status' }, { key: 'amount', label: 'Amount' }]} rows={sales.slice(0, 3).map((sale) => ({ ref: sale.saleNumber || 'Sale', status: <BizFlowStatusChip label={sale.paymentMethod || 'Cash'} tone="success" />, amount: formatMYR(sale.total) }))} />
+            <BizFlowTable columns={[{ key: 'ref', label: 'Reference' }, { key: 'status', label: 'Status' }, { key: 'amount', label: 'Amount' }]} rows={sales.slice(0, 3).map((sale) => ({ ref: sale.saleNumber || 'Sale', status: <BizFlowStatusChip label={sale.status === 'REFUNDED' ? 'Refunded' : sale.paymentMethod || 'Cash'} tone={sale.status === 'REFUNDED' ? 'warning' : 'success'} />, amount: formatMYR(sale.total) }))} />
           </BizFlowSectionCard>
 
           <BizFlowSectionCard title="Low stock alerts" subtitle="Needs attention" style={styles.card}>

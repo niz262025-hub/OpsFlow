@@ -25,7 +25,7 @@ export default function CustomerReports() {
   const salesTrend = useMemo(() => salesByDay(sales), [sales]);
   const filteredSales = useMemo(() => sales.filter((sale) => `${sale.saleNumber} ${sale.customerName ?? ''}`.toLowerCase().includes(search.toLowerCase())).slice(0, 6), [sales, search]);
   const totals = useMemo(() => ({
-    sales: sales.reduce((sum, sale) => sum + (sale.total || 0), 0),
+    sales: sales.filter(sale => sale.status !== 'REFUNDED').reduce((sum, sale) => sum + (sale.total || 0), 0),
     purchases: purchases.reduce((sum, purchase) => sum + (purchase.total || 0), 0) + goodsReceipts.reduce((sum, receipt) => sum + (receipt.totalAmount || 0), 0),
     products: products.length,
   }), [products.length, purchases, sales, goodsReceipts]);
@@ -55,7 +55,7 @@ export default function CustomerReports() {
             <BizFlowChart data={salesTrend.values} labels={salesTrend.labels} />
           </BizFlowSectionCard>
           <BizFlowSectionCard title="Recent sales" subtitle="Latest transactions" style={styles.card}>
-            <BizFlowTable columns={[{ key: 'sale', label: 'Sale' }, { key: 'status', label: 'Status' }, { key: 'amount', label: 'Amount' }]} rows={filteredSales.map((sale) => ({ sale: sale.saleNumber, status: <BizFlowStatusChip label={sale.paymentMethod || 'Cash'} tone="success" />, amount: formatMYR(sale.total) }))} />
+            <BizFlowTable columns={[{ key: 'sale', label: 'Sale' }, { key: 'status', label: 'Status' }, { key: 'amount', label: 'Amount' }]} rows={filteredSales.map((sale) => ({ sale: sale.saleNumber, status: <BizFlowStatusChip label={sale.status === 'REFUNDED' ? 'Refunded' : sale.paymentMethod || 'Cash'} tone={sale.status === 'REFUNDED' ? 'warning' : 'success'} />, amount: formatMYR(sale.total) }))} />
           </BizFlowSectionCard>
         </View>
       </View>

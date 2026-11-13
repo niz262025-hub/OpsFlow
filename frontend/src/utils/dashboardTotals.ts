@@ -1,4 +1,4 @@
-type DatedSale = { total: number; createdAt?: unknown };
+type DatedSale = { total: number; status?: string; createdAt?: unknown };
 type CashRow = { type: string; amount: number };
 const localDay = (date: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kuala_Lumpur', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
 
@@ -17,6 +17,7 @@ export function salesByDay(sales: DatedSale[], now = new Date()) {
   const days = Array.from({ length: 7 }, (_, index) => localDay(new Date(anchor.getTime() - (6 - index) * 86400000)));
   const cents = days.map(() => 0);
   for (const sale of sales) {
+    if (sale.status === 'REFUNDED') continue;
     const date = dateOf(sale.createdAt);
     if (!date || !Number.isFinite(sale.total)) continue;
     const index = days.indexOf(localDay(date));

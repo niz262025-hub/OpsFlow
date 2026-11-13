@@ -26,3 +26,8 @@ test('cash includes inflows and subtracts outflows without double-counting sales
 test('decimal amounts sum in cents and invalid amounts are ignored', () => {
   assert.equal(cashLedgerBalance([{ type: 'in', amount: 0.1 }, { type: 'in', amount: 0.2 }, { type: 'in', amount: NaN }]), 0.3);
 });
+test('fully refunded sales leave the sales trend and reversed cash returns to zero', () => {
+  const sale = { total: 21.2, createdAt: now };
+  assert.equal(salesByDay([sale, { ...sale, status: 'REFUNDED' }], now).today, 21.2);
+  assert.equal(cashLedgerBalance([{ type: 'in', amount: 21.2 }, { type: 'out', amount: 21.2 }]), 0);
+});

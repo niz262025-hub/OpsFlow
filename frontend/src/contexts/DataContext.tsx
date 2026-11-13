@@ -21,6 +21,8 @@ import { getDocumentStore } from '@/src/services/documentStore';
 import { useAuth } from './AuthContext';
 import { purchaseLines, receiptLines } from '@/src/utils/purchaseValidation';
 
+import { recordSaleRefund } from '@/src/services/saleRefund';
+
 // ---------- Types ----------
 export interface Company {
   id: string;
@@ -86,6 +88,9 @@ export interface Sale {
   items: SaleItem[]; subtotal: number; discount: number; tax: number; total: number;
   paymentMethod: SalePaymentMethod;
   paymentReference?: string;
+  bankAccountId?: string | null;
+  status?: 'PAID' | 'REFUNDED';
+  refundedAt?: any; refundReason?: string; refundReference?: string;
   cashier?: string; cashierId?: string; createdAt?: any;
 }
 export interface PurchaseItem { productId: string; productName: string; sku: string; quantity: number; costPrice: number; total: number; }
@@ -174,7 +179,7 @@ export interface CapitalEntry {
 }
 export interface StockMovement {
   id: string; companyId: string; productId: string; productName: string;
-  type: 'PURCHASE' | 'SALE' | 'ADJUSTMENT' | 'OPENING';
+  type: 'PURCHASE' | 'SALE' | 'RETURN' | 'ADJUSTMENT' | 'OPENING';
   quantity: number; stockAfter: number; referenceId?: string; note?: string; createdAt?: any;
 }
 export interface Invite {
@@ -229,6 +234,7 @@ interface DataCtx {
   deleteCustomer: (id: string) => Promise<void>;
 
   // Business ops (atomic)
+  refundSale: (saleId: string, reason: string) => Promise<string>;
   createSale: (input: { items: SaleItem[]; customerId?: string; customerName?: string; discount: number; tax: number; paymentMethod: SalePaymentMethod; paymentReference?: string; }) => Promise<Sale>;
   createPurchase: (input: { items: PurchaseItem[]; supplierId?: string; supplierName?: string; discount: number; tax: number; }) => Promise<Purchase>;
   createPurchaseOrder: (input: { supplierId?: string; supplierName?: string; status: 'Draft' | 'Sent' | 'Partially Received' | 'Fully Received' | 'Closed'; expectedDeliveryDate?: string; notes?: string; items: Array<{ productId: string; productName: string; sku: string; quantity: number; unitCost: number; total: number; }> }) => Promise<PurchaseOrder>;
@@ -653,6 +659,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         customerName: input.customerName || null,
         items: groupedItems,
         subtotal, discount: input.discount, tax: input.tax, total,
+        status: 'PAID', bankAccountId: normalizedPaymentMethod === 'Cash' ? null : defaultBankAccountId,
         paymentMethod: normalizedPaymentMethod,
         paymentReference: input.paymentReference?.trim() || null,
         cashierId: profile?.uid || null,
@@ -700,9 +707,18 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       id: saleRef.id, companyId: cId, saleNumber,
       customerId: input.customerId, customerName: input.customerName,
       items: input.items, subtotal, discount: input.discount, tax: input.tax, total,
+      status: 'PAID', bankAccountId: normalizedPaymentMethod === 'Cash' ? null : defaultBankAccountId,
       paymentMethod: normalizedPaymentMethod,
       paymentReference: input.paymentReference?.trim() || undefined,
     } as Sale;
+  };
+
+  const refundSale = async (saleId: string, reason: string) => {
+    const cId = requireCompany();
+    if (!profile?.uid || !['admin', 'manager'].includes(profile.role)) throw new Error('A manager must record the refund.');
+    const reference = await recordSaleRefund(getDocumentStore(), cId, profile.uid, saleId, reason);
+    setSales(current => current.map(sale => sale.id === saleId ? { ...sale, status: 'REFUNDED', refundReason: reason.trim(), refundReference: reference } : sale));
+    return reference;
   };
 
   const createPurchaseOrder = async (input: { supplierId?: string; supplierName?: string; status: 'Draft' | 'Sent' | 'Partially Received' | 'Fully Received' | 'Closed'; expectedDeliveryDate?: string; notes?: string; items: Array<{ productId: string; productName: string; sku: string; quantity: number; unitCost: number; total: number; }> }) => {
@@ -1580,7 +1596,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       createCategory, updateCategory, deleteCategory,
       createSupplier, updateSupplier, deleteSupplier,
       createCustomer, updateCustomer, deleteCustomer,
-      createSale, createPurchase, createPurchaseOrder, deletePurchaseOrder, receiveGoods, createSupplierInvoice, createPayment, adjustStock,
+      createSale, refundSale, createPurchase, createPurchaseOrder, deletePurchaseOrder, receiveGoods, createSupplierInvoice, createPayment, adjustStock,
       createExpense, updateExpense, deleteExpense,
       createCashEntry, createBankAccount, createBankEntry, transferBankToCash, createCapitalEntry,
       createInvite, deleteInvite, changeMemberRole, removeMember,
