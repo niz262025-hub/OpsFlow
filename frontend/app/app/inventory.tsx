@@ -18,12 +18,14 @@ const modules = [
 
 export default function CustomerInventory() {
   const router = useRouter();
-  const { products, stockMovements, adjustStock, createProduct, updateProduct } = useData();
+  const { products, stockMovements, adjustStock, createProduct, updateProduct, archiveProduct } = useData();
   const [search, setSearch] = useState('');
   const [form, setForm] = useState({ name: '', sku: '', costPrice: '', sellingPrice: '', stock: '0', minStock: '10', unit: 'pcs' });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+  const [showArchived, setShowArchived] = useState(false);
+  const [archiveId, setArchiveId] = useState<string | null>(null);
   const saveProduct = async () => {
     const numbers = [form.costPrice, form.sellingPrice, form.stock, form.minStock];
     if (!form.name.trim() || !form.sku.trim() || !form.unit.trim() || numbers.some(value => !value.trim() || !Number.isFinite(Number(value)) || Number(value) < 0)) {
@@ -47,9 +49,21 @@ export default function CustomerInventory() {
     } finally { setSaving(false); }
   };
 
-  const filteredProducts = useMemo(() => products.filter((product) => `${product.name} ${product.sku}`.toLowerCase().includes(search.toLowerCase())).sort((a, b) => a.stock - b.stock), [products, search]);
-  const lowStockItems = useMemo(() => products.filter((product) => product.stock <= (product.minStock || 10)), [products]);
+  const filteredProducts = useMemo(() => products.filter((product) => (product.status === 'archived') === showArchived && `${product.name} ${product.sku}`.toLowerCase().includes(search.toLowerCase())).sort((a, b) => a.stock - b.stock), [products, search, showArchived]);
+  const lowStockItems = useMemo(() => products.filter((product) => product.status === 'active' && product.stock <= (product.minStock ?? 10)), [products]);
   const stockValue = useMemo(() => products.reduce((sum, product) => sum + (product.stock || 0) * (product.costPrice || 0), 0), [products]);
+
+  const changeArchived = async (id: string, archived: boolean) => {
+    if (saving) return;
+    setSaving(true); setMessage('');
+    try {
+      if (archived) await archiveProduct(id);
+      else await updateProduct(id, { status: 'active' });
+      setArchiveId(null);
+      setMessage(archived ? 'Product deleted from the active catalog. Restore it from Archived products. History is retained.' : 'Product restored to the active catalog.');
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Product status could not be saved.'); }
+    finally { setSaving(false); }
+  };
 
   const restock = async (product: any) => {
     try {
@@ -72,7 +86,7 @@ export default function CustomerInventory() {
     >
       <View style={styles.content}>
         <View style={styles.kpiGrid}>
-          <BizFlowKpiCard label="Tracked products" value={`${products.length}`} detail="In the current catalog" />
+          <BizFlowKpiCard label="Tracked products" value={`${products.filter(product => product.status === 'active').length}`} detail="In the active catalog" />
           <BizFlowKpiCard label="Low stock alerts" value={`${lowStockItems.length}`} detail="Need replenishment" tone="warning" />
           <BizFlowKpiCard label="Stock value" value={formatMYR(stockValue)} detail="At cost" />
           <BizFlowKpiCard label="Movements" value={`${stockMovements.length}`} detail="Latest adjustments" tone="success" />
@@ -95,9 +109,14 @@ export default function CustomerInventory() {
           {!!editingId && <BizFlowButton title="Cancel edit" variant="secondary" disabled={saving} onPress={() => { setEditingId(null); setForm({ name: '', sku: '', costPrice: '', sellingPrice: '', stock: '0', minStock: '10', unit: 'pcs' }); setMessage(''); }} />}
         </BizFlowSectionCard>
         {!!message && <Text accessibilityRole="alert" style={styles.listTitle}>{message}</Text>}
+        <BizFlowButton title={showArchived ? 'Show active products' : 'Show archived products'} variant="secondary" disabled={saving} onPress={() => { setShowArchived(!showArchived); setArchiveId(null); }} />
+        {!!archiveId && <BizFlowSectionCard title="Delete product?" subtitle="Only products with zero stock and no reservations can be deleted. The product is archived and can be restored; receipt and inventory history are retained.">
+          <BizFlowButton title="Confirm archive" disabled={saving} onPress={() => changeArchived(archiveId, true)} />
+          <BizFlowButton title="Cancel deletion" variant="secondary" disabled={saving} onPress={() => setArchiveId(null)} />
+        </BizFlowSectionCard>}
         <View style={styles.grid}>
           <BizFlowSectionCard title="Stock overview" subtitle="Current quantities" style={styles.card}>
-            <BizFlowTable columns={[{ key: 'product', label: 'Product' }, { key: 'stock', label: 'Stock' }, { key: 'status', label: 'Status' }, { key: 'action', label: 'Action' }]} rows={filteredProducts.map((product) => ({ product: product.name, stock: `${product.stock}`, status: <BizFlowStatusChip label={product.stock <= (product.minStock || 10) ? 'Low' : 'Healthy'} tone={product.stock <= (product.minStock || 10) ? 'warning' : 'success'} />, action: <View style={{ gap: 8 }}><BizFlowButton title={`Edit ${product.name}`} variant="secondary" disabled={saving} onPress={() => { setEditingId(product.id); setForm({ name: product.name, sku: product.sku, costPrice: String(product.costPrice), sellingPrice: String(product.sellingPrice), stock: String(product.stock), minStock: String(product.minStock ?? 10), unit: product.unit || 'pcs' }); setMessage(''); }} /><BizFlowButton title="Restock" variant="secondary" disabled={saving} onPress={() => restock(product)} /></View> }))} />
+            <BizFlowTable columns={[{ key: 'product', label: 'Product' }, { key: 'stock', label: 'Stock' }, { key: 'status', label: 'Status' }, { key: 'action', label: 'Action' }]} rows={filteredProducts.map((product) => ({ product: product.name, stock: `${product.stock}`, status: <BizFlowStatusChip label={product.status === 'archived' ? 'Archived' : product.stock <= (product.minStock ?? 10) ? 'Low' : 'Healthy'} tone={product.stock <= (product.minStock || 10) ? 'warning' : 'success'} />, action: <View style={{ gap: 8 }}><BizFlowButton title={`Edit ${product.name}`} variant="secondary" disabled={saving} onPress={() => { setEditingId(product.id); setForm({ name: product.name, sku: product.sku, costPrice: String(product.costPrice), sellingPrice: String(product.sellingPrice), stock: String(product.stock), minStock: String(product.minStock ?? 10), unit: product.unit || 'pcs' }); setMessage(''); }} /><BizFlowButton title="Restock" variant="secondary" disabled={saving || showArchived} onPress={() => restock(product)} /><BizFlowButton title={`${showArchived ? 'Restore' : 'Delete'} ${product.name}`} variant="secondary" disabled={saving} onPress={() => showArchived ? changeArchived(product.id, false) : setArchiveId(product.id)} /></View> }))} />
           </BizFlowSectionCard>
           <BizFlowSectionCard title="Low stock alerts" subtitle="Prioritize replenishment" style={styles.card}>
             <View style={styles.listWrap}>

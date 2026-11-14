@@ -22,6 +22,7 @@ import { useAuth } from './AuthContext';
 import { purchaseLines, receiptLines } from '@/src/utils/purchaseValidation';
 
 import { recordSaleRefund } from '@/src/services/saleRefund';
+import { assertSellableProduct, setProductArchived } from '@/src/services/productLifecycle';
 
 // ---------- Types ----------
 export interface Company {
@@ -545,7 +546,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     await deleteDoc(doc(getDocumentStore(), 'products', id));
   };
   const archiveProduct = async (id: string) => {
-    await updateDoc(doc(getDocumentStore(), 'products', id), { status: 'archived' });
+    await setProductArchived(getDocumentStore(), requireCompany(), id, true);
   };
 
   // ---------- Categories ----------
@@ -634,6 +635,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         const item = groupedItems[idx];
         const snap = productSnaps[idx];
         if (!snap.exists()) throw new Error(`Product not found: ${item.productName}`);
+        assertSellableProduct(snap.data(), cId);
         const currentStock = (snap.data() as any).stock as number;
         if (currentStock < item.quantity) {
           throw new Error(`Insufficient stock for ${item.productName}. Available: ${currentStock}`);
