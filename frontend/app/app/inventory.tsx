@@ -18,9 +18,10 @@ const modules = [
 
 export default function CustomerInventory() {
   const router = useRouter();
-  const { products, stockMovements, adjustStock, createProduct } = useData();
+  const { products, stockMovements, adjustStock, createProduct, updateProduct } = useData();
   const [search, setSearch] = useState('');
   const [form, setForm] = useState({ name: '', sku: '', costPrice: '', sellingPrice: '', stock: '0', minStock: '10', unit: 'pcs' });
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const saveProduct = async () => {
@@ -32,9 +33,15 @@ export default function CustomerInventory() {
     setSaving(true);
     setMessage('');
     try {
-      await createProduct({ name: form.name.trim(), sku: form.sku.trim(), unit: form.unit.trim(), costPrice: Number(form.costPrice), sellingPrice: Number(form.sellingPrice), stock: Number(form.stock), minStock: Number(form.minStock), status: 'active' });
+      const details = { name: form.name.trim(), sku: form.sku.trim(), unit: form.unit.trim(), costPrice: Number(form.costPrice), sellingPrice: Number(form.sellingPrice), minStock: Number(form.minStock) };
+      if (editingId) {
+        await updateProduct(editingId, details);
+      } else {
+        await createProduct({ ...details, stock: Number(form.stock), status: 'active' });
+      }
       setForm({ name: '', sku: '', costPrice: '', sellingPrice: '', stock: '0', minStock: '10', unit: 'pcs' });
-      setMessage('Product saved. It is now available in POS.');
+      setMessage(editingId ? 'Product updated. Stock and sale history are unchanged.' : 'Product saved. It is now available in POS.');
+      setEditingId(null);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Product could not be saved.');
     } finally { setSaving(false); }
@@ -71,25 +78,26 @@ export default function CustomerInventory() {
           <BizFlowKpiCard label="Movements" value={`${stockMovements.length}`} detail="Latest adjustments" tone="success" />
         </View>
 
-        <BizFlowSectionCard title="Add product" subtitle="Create a catalog item for inventory and POS">
+        <BizFlowSectionCard title={editingId ? "Edit product" : "Add product"} subtitle={editingId ? "Update catalog details. Use Restock for stock changes." : "Create a catalog item for inventory and POS"}>
           <View style={styles.formGrid}>
             {([
               ['name', 'Product name'], ['sku', 'SKU'], ['costPrice', 'Cost price (RM)'],
               ['sellingPrice', 'Selling price (RM)'], ['stock', 'Opening stock'],
               ['minStock', 'Minimum stock'], ['unit', 'Unit'],
-            ] as const).map(([key, label]) => (
+            ] as const).filter(([key]) => !editingId || key !== 'stock').map(([key, label]) => (
               <View key={key} style={styles.field}>
                 <Text style={styles.listTitle}>{label}</Text>
                 <TextInput accessibilityLabel={label} value={form[key]} onChangeText={value => setForm(current => ({ ...current, [key]: value }))} style={styles.input} keyboardType={['costPrice', 'sellingPrice', 'stock', 'minStock'].includes(key) ? 'decimal-pad' : 'default'} />
               </View>
             ))}
           </View>
-          <BizFlowButton title={saving ? 'Saving…' : 'Save product'} disabled={saving} onPress={saveProduct} />
+          <BizFlowButton title={saving ? 'Saving…' : editingId ? 'Update product' : 'Save product'} disabled={saving} onPress={saveProduct} />
+          {!!editingId && <BizFlowButton title="Cancel edit" variant="secondary" disabled={saving} onPress={() => { setEditingId(null); setForm({ name: '', sku: '', costPrice: '', sellingPrice: '', stock: '0', minStock: '10', unit: 'pcs' }); setMessage(''); }} />}
         </BizFlowSectionCard>
         {!!message && <Text accessibilityRole="alert" style={styles.listTitle}>{message}</Text>}
         <View style={styles.grid}>
           <BizFlowSectionCard title="Stock overview" subtitle="Current quantities" style={styles.card}>
-            <BizFlowTable columns={[{ key: 'product', label: 'Product' }, { key: 'stock', label: 'Stock' }, { key: 'status', label: 'Status' }, { key: 'action', label: 'Action' }]} rows={filteredProducts.map((product) => ({ product: product.name, stock: `${product.stock}`, status: <BizFlowStatusChip label={product.stock <= (product.minStock || 10) ? 'Low' : 'Healthy'} tone={product.stock <= (product.minStock || 10) ? 'warning' : 'success'} />, action: <BizFlowButton title="Restock" variant="secondary" onPress={() => restock(product)} /> }))} />
+            <BizFlowTable columns={[{ key: 'product', label: 'Product' }, { key: 'stock', label: 'Stock' }, { key: 'status', label: 'Status' }, { key: 'action', label: 'Action' }]} rows={filteredProducts.map((product) => ({ product: product.name, stock: `${product.stock}`, status: <BizFlowStatusChip label={product.stock <= (product.minStock || 10) ? 'Low' : 'Healthy'} tone={product.stock <= (product.minStock || 10) ? 'warning' : 'success'} />, action: <View style={{ gap: 8 }}><BizFlowButton title={`Edit ${product.name}`} variant="secondary" disabled={saving} onPress={() => { setEditingId(product.id); setForm({ name: product.name, sku: product.sku, costPrice: String(product.costPrice), sellingPrice: String(product.sellingPrice), stock: String(product.stock), minStock: String(product.minStock ?? 10), unit: product.unit || 'pcs' }); setMessage(''); }} /><BizFlowButton title="Restock" variant="secondary" disabled={saving} onPress={() => restock(product)} /></View> }))} />
           </BizFlowSectionCard>
           <BizFlowSectionCard title="Low stock alerts" subtitle="Prioritize replenishment" style={styles.card}>
             <View style={styles.listWrap}>
