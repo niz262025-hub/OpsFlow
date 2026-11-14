@@ -65,3 +65,5 @@ These are automated/local results, not substitutes for missing hosted customer U
 1. Sign into staging using an existing eligible ordinary-customer UAT account, not the platform admin; validate no-entitlement, trial activation, launch, quota exhaustion and expiry.
 2. Finish the MYOPS Master approved monthly billing/bundle gate and production customer entitlement smoke. Preserve RM9.90/RM19.90/RM29.90/RM39.90 and existing audit history; do not invent Starter limits or silently enable incomplete billing.
 3. Issue GO only after all critical customer gates pass. OpsFinance, OpsPS Web and MYOPS Master final UAT remain queued after OpsFlow passes, as instructed. OpsHub excluded.
+
+Read-only follow-up identified an existing dummy UAT profile with no trial record and a separate existing expired-trial fixture in the central staging database. The second connected account can read that project; the first account's permission denial is not a project-wide access failure. No account, grant, trial, session timestamp or credential was changed.
