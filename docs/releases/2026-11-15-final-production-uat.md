@@ -67,3 +67,20 @@ These are automated/local results, not substitutes for missing hosted customer U
 3. Issue GO only after all critical customer gates pass. OpsFinance, OpsPS Web and MYOPS Master final UAT remain queued after OpsFlow passes, as instructed. OpsHub excluded.
 
 Read-only follow-up identified an existing dummy UAT profile with no trial record and a separate existing expired-trial fixture in the central staging database. The second connected account can read that project; the first account's permission denial is not a project-wide access failure. No account, grant, trial, session timestamp or credential was changed.
+
+## Continuation — 15 November 2026, 01:05 MYT
+
+User directs functional UAT first and central customer billing/entitlement validation LAST. Carry the missing non-admin customer lifecycle into the final shared gate; it does not block functional admin UAT of other applications.
+
+Confirmed missing merchant catalog deletion on production Inventory. Added reversible Delete/Archived/Restore controls using existing catalog status. Archival uses an optimistic transaction and rejects nonzero stock/reservations; historical receipts and movements are retained. Checkout now checks the fresh product company/status before writing, rejecting archived products from stale carts.
+
+- Fix commit: 6d6a3c742259eccd52a84573439c93fd9cc0ecbc.
+- 50 frontend tests PASS (7 new lifecycle regressions); TypeScript, lint, web export PASS.
+- Local gateway replay and atomic quota/idempotency suites PASS.
+- Configured preview: dpl_7eGGRDrU4ryRoCwYsJSVrVKuR4mj READY; readiness HTTP 200.
+- Production: dpl_C8p2KKsATYvhW5RiK2gwbuRpoGFY READY; production-built readiness HTTP 200 before promotion, custom production domain verified after promotion.
+- Browser production SSO/admin and refresh PASS. Created only UAT-20261115-ARCHIVE at zero stock, archived and restored through merchant UI. Independent production SQL confirms same product, active, stock 0, version 3. Existing receipt fixtures retained.
+- Browser production rejected archival of UAT-20261114-FINAL01 with stock 10; rendered stock/reservation error. No stock or sales were changed by this negative test.
+- Signed-out /api/auth/me HTTP 403; zero public tables without RLS. Project runtime error scan returned no errors in the inspected 15-minute window.
+
+OpsFlow functional/admin gate DONE using this new evidence plus the retained exact-source POS/refund and natural-expiry evidence above. Hosted non-admin lifecycle and final full-customer GO remain pending; no paid gate is claimed passed. Next: OpsFinance functional UAT. No real payment, customer-data deletion, schema change, auth role change or security reduction.
