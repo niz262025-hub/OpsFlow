@@ -43,17 +43,30 @@ class MyopsAppAccessContractTests(unittest.TestCase):
         with self.assertRaises(Exception):
             private_key.public_key().verify(signature, message + b"changed")
 
-    def test_redeem_response_requires_opsflow_product_and_valid_ids(self):
-        self.assertEqual(
-            validate_redeem_response({
-                "product": "opsflow",
-                "session_id": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
-                "user_ref": "U" * 43,
-            })["product"],
-            "opsflow",
-        )
+    def test_redeem_response_requires_configured_live_product_and_valid_ids(self):
+        config = {"MYOPS_APP_ID": "opsflow"}
+        with patch.dict("os.environ", config, clear=False):
+            self.assertEqual(
+                validate_redeem_response({
+                    "product": "opsflow",
+                    "session_id": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+                    "user_ref": "U" * 43,
+                })["product"],
+                "opsflow",
+            )
+            with self.assertRaises(MyopsAccessError):
+                validate_redeem_response({"product": "myhr", "session_id": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11", "user_ref": "U" * 43})
+        with patch.dict("os.environ", {"MYOPS_APP_ID": "myhr"}, clear=False):
+            self.assertEqual(
+                validate_redeem_response({
+                    "product": "myhr",
+                    "session_id": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+                    "user_ref": "U" * 43,
+                })["product"],
+                "myhr",
+            )
         with self.assertRaises(MyopsAccessError):
-            validate_redeem_response({"product": "opsfinance", "session_id": "bad", "user_ref": "bad"})
+            validate_redeem_response({"product": "opswms", "session_id": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11", "user_ref": "U" * 43})
 
 
 if __name__ == "__main__":
