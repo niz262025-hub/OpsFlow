@@ -2,6 +2,7 @@ import { storage } from '@/src/utils/storage';
 
 export const OPSFLOW_API_TOKEN_KEY = 'auth:opsflow-api-token';
 export const MYOPS_INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000;
+export const MYOPS_HOME_URL = 'https://www.myops.com.my';
 const LAUNCH_TICKET = /^[A-Za-z0-9_-]{43}$/;
 
 export type MyopsRedeemResult = {

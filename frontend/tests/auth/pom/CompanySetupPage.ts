@@ -7,16 +7,15 @@ export class CompanySetupPage {
     await this.page.goto(`${this.baseUrl}/(setup)/company-setup`);
   }
 
-  getLogoutControl(): Locator {
-    const explicit = this.page.getByTestId('logout-button');
-    // Fallback for current app state: logout icon text from MaterialIcons on web.
-    const iconFallback = this.page.locator('text=logout').first();
-    return explicit.or(iconFallback).first();
+  getMyopsBackControl(): Locator {
+    const explicit = this.page.getByTestId('back-to-myops-button');
+    const textFallback = this.page.locator('text=Back to MYOPS').first();
+    return explicit.or(textFallback).first();
   }
 
-  async logout() {
+  async openMyops() {
     await this.goto();
-    const control = this.getLogoutControl();
+    const control = this.getMyopsBackControl();
     await expect(control).toBeVisible();
     await control.click();
   }

@@ -34,5 +34,5 @@ export const REGISTER = {
 };
 
 export const LOGOUT = {
-	button: 'logout-button',
+	button: 'back-to-myops-button',
 };

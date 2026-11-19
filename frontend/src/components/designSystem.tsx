@@ -1,9 +1,10 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, ViewStyle, StyleProp, Pressable } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, ViewStyle, StyleProp, Pressable, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useTheme } from '@/src/contexts/ThemeContext';
 import { radius, spacing } from '@/src/constants/theme';
+import { MYOPS_HOME_URL } from '@/src/services/myopsAppAccess';
 
 type Tone = 'primary' | 'secondary' | 'success' | 'warning' | 'danger' | 'neutral';
 
@@ -224,6 +225,10 @@ export function BizFlowTopBar({ title, subtitle, searchValue, onSearchChange, pr
           </View>
         </View>
       ) : null}
+      <Pressable accessibilityRole="button" onPress={() => { void Linking.openURL(MYOPS_HOME_URL); }} style={[styles.myopsReturnAction, { backgroundColor: '#E0F2FE', borderColor: '#BAE6FD' }]}> 
+        <MaterialIcons name="arrow-back" size={16} color="#0F172A" />
+        <Text style={styles.myopsReturnText}>Back to MYOPS</Text>
+      </Pressable>
     </View>
   );
 }
@@ -264,6 +269,8 @@ const styles = StyleSheet.create({
   profileAvatarText: { fontSize: 14, fontWeight: '700', fontFamily: 'Inter' },
   profileName: { fontSize: 13, fontWeight: '700', color: '#0F172A', fontFamily: 'Inter' },
   profileRole: { fontSize: 12, color: '#64748B', fontFamily: 'Inter' },
+  myopsReturnAction: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1 },
+  myopsReturnText: { fontSize: 12, fontWeight: '700', color: '#0F172A', fontFamily: 'Inter' },
   button: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: 999, gap: 8 },
   buttonText: { fontSize: 14, fontWeight: '700', fontFamily: 'Inter' },
   badge: { alignSelf: 'flex-start', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
