@@ -87,7 +87,7 @@ test.describe('Authentication E2E', () => {
     await expect(page.getByTestId('login-submit-button')).not.toBeVisible();
   });
 
-  test('logout', async ({ page }) => {
+  test('Back to MYOPS is visible instead of a local logout control', async ({ page }) => {
     test.skip(!hasValidAuthCredentials(), 'Set E2E_AUTH_EMAIL and E2E_AUTH_PASSWORD to run valid-auth tests');
     const loginPage = new LoginPage(page, AUTH_E2E_BASE_URL);
     await loginPage.goto();
@@ -96,9 +96,9 @@ test.describe('Authentication E2E', () => {
     await expect(page).toHaveURL(/\(setup\)\/company-setup|\(tabs\)\/dashboard/, { timeout: 25000 });
 
     const companySetupPage = new CompanySetupPage(page, AUTH_E2E_BASE_URL);
-    await companySetupPage.logout();
-
-    await expect(page).toHaveURL(/\/login(?:\/)?$/, { timeout: 20000 });
-    await expect(loginPage.submitButton).toBeVisible();
+    await companySetupPage.goto();
+    await expect(companySetupPage.getMyopsBackControl()).toBeVisible();
+    await expect(page.getByText('Back to MYOPS')).toBeVisible();
+    await expect(page.getByTestId('logout-button')).toHaveCount(0);
   });
 });
