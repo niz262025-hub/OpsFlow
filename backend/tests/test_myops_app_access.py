@@ -52,6 +52,14 @@ class MyopsAppAccessContractTests(unittest.TestCase):
             })["product"],
             "opsflow",
         )
+        self.assertEqual(
+            validate_redeem_response({
+                "product": "OpsFlow Bundle",
+                "session_id": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+                "user_ref": "U" * 43,
+            })["product"],
+            "opsflow",
+        )
         with self.assertRaises(MyopsAccessError):
             validate_redeem_response({"product": "opsfinance", "session_id": "bad", "user_ref": "bad"})
 
