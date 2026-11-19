@@ -8,6 +8,7 @@ import { useIconFonts } from '@/src/hooks/use-icon-fonts';
 import { AuthProvider } from '@/src/contexts/AuthContext';
 import { DataProvider } from '@/src/contexts/DataContext';
 import { ThemeProvider, useTheme } from '@/src/contexts/ThemeContext';
+import { LocaleProvider } from '@/src/contexts/LocaleContext';
 
 LogBox.ignoreAllLogs(true);
 SplashScreen.preventAutoHideAsync();
@@ -66,17 +67,19 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <ThemeProvider>
-          <StatusBarWrap />
-          <AuthProvider>
-            <DataProvider>
-              <Stack screenOptions={{ headerShown: false, animation: 'fade' }}>
-                <Stack.Screen name="index" />
-                <Stack.Screen name="login" />
-                <Stack.Screen name="register" />
-                <Stack.Screen name="demo" />
-              </Stack>
-            </DataProvider>
-          </AuthProvider>
+          <LocaleProvider>
+            <StatusBarWrap />
+            <AuthProvider>
+              <DataProvider>
+                <Stack screenOptions={{ headerShown: false, animation: 'fade' }}>
+                  <Stack.Screen name="index" />
+                  <Stack.Screen name="login" />
+                  <Stack.Screen name="register" />
+                  <Stack.Screen name="demo" />
+                </Stack>
+              </DataProvider>
+            </AuthProvider>
+          </LocaleProvider>
         </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
