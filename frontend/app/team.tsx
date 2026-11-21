@@ -45,7 +45,7 @@ export default function TeamPage() {
         {
           text: 'Share',
           onPress: async () => {
-            const msg = `You're invited to join ${company?.name || 'our team'} on BizFlow Pro.\n\nInvite Code: ${code}\nRole: ${ROLE_LABELS[newRole]}\n\n1. Download BizFlow Pro\n2. Create an account\n3. Enter this code when prompted`;
+            const msg = `You're invited to join ${company?.name || 'our team'} on OpsFlow.\n\nInvite Code: ${code}\nRole: ${ROLE_LABELS[newRole]}\n\n1. Download OpsFlow\n2. Create an account\n3. Enter this code when prompted`;
             if (Platform.OS === 'web') { await Clipboard.setStringAsync(msg); Alert.alert('Copied', 'Invite message copied'); }
             else await Share.share({ message: msg });
           },

@@ -6,8 +6,6 @@ import { BizFlowChart, BizFlowDashboardShell, BizFlowKpiCard, BizFlowSectionCard
 const modules = [
   { key: 'overview', label: 'Overview', icon: 'dashboard' as const, path: '/admin/dashboard' },
   { key: 'companies', label: 'Companies', icon: 'business' as const, path: '/admin/companies' },
-  { key: 'subscriptions', label: 'Subscriptions', icon: 'credit-card' as const, path: '/admin/subscriptions' },
-  { key: 'payments', label: 'Payments', icon: 'payments' as const, path: '/admin/payments' },
 ];
 
 const companies = [
