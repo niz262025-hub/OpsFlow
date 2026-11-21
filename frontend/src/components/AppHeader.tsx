@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Linking, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '@/src/contexts/ThemeContext';
@@ -8,29 +8,14 @@ import { useData } from '@/src/contexts/DataContext';
 
 export function AppHeader() {
   const { theme } = useTheme();
-  const { logout, profile } = useAuth();
+  const { profile } = useAuth();
   const { company } = useData();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [loggingOut, setLoggingOut] = useState(false);
 
   const displayName = profile?.displayName || profile?.email?.split('@')[0] || 'Admin';
   const companyName = company?.name || 'BizFlow ERP';
   const roleLabel = profile?.role ? profile.role.charAt(0).toUpperCase() + profile.role.slice(1) : 'Admin';
   const avatarLabel = (displayName || 'A').charAt(0).toUpperCase();
-
-  const handleLogout = async () => {
-    if (loggingOut) return;
-
-    setLoggingOut(true);
-    try {
-      setMenuOpen(false);
-      await logout();
-    } catch (error: any) {
-      Alert.alert('Sign out failed', error?.message || 'Could not sign out right now.');
-    } finally {
-      setLoggingOut(false);
-    }
-  };
 
   return (
     <View style={styles.wrapper}>
@@ -89,22 +74,6 @@ export function AppHeader() {
                 >
                   <MaterialIcons name="arrow-back" size={18} color={theme.colors.primary} />
                   <Text style={[styles.logoutText, { color: theme.colors.primary }]}>Back to MYOPS</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  accessibilityRole="button"
-                  testID="logout-button"
-                  disabled={loggingOut}
-                  onPress={handleLogout}
-                  style={styles.logoutRow}
-                >
-                  {loggingOut ? (
-                    <ActivityIndicator size="small" color={theme.colors.primary} />
-                  ) : (
-                    <MaterialIcons name="logout" size={18} color={theme.colors.error} />
-                  )}
-                  <Text style={[styles.logoutText, { color: theme.colors.error }]}>
-                    {loggingOut ? 'Signing out...' : 'Sign Out'}
-                  </Text>
                 </TouchableOpacity>
               </View>
             ) : null}
