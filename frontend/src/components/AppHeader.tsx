@@ -3,6 +3,7 @@ import { Alert, Linking, Pressable, StyleSheet, Text, TouchableOpacity, View } f
 import { MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '@/src/contexts/ThemeContext';
+import { myopsPortalUrl } from '@/src/services/myopsAppAccess';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { useData } from '@/src/contexts/DataContext';
 
@@ -66,7 +67,7 @@ export function AppHeader() {
                   testID="back-to-myops-button"
                   onPress={() => {
                     setMenuOpen(false);
-                    void Linking.openURL('https://www.myops.com.my/').catch(() => {
+                    void Linking.openURL(myopsPortalUrl()).catch(() => {
                       Alert.alert('Unable to open MYOPS', 'Please open https://www.myops.com.my in your browser.');
                     });
                   }}
