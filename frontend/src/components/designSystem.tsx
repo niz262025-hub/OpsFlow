@@ -1,7 +1,6 @@
-import React, { useState } from 'react';
-import { useAuth } from '@/src/contexts/AuthContext';
+import React from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, ViewStyle, StyleProp, Pressable } from 'react-native';
+import { Alert, Linking, View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, ViewStyle, StyleProp, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useTheme } from '@/src/contexts/ThemeContext';
@@ -206,13 +205,12 @@ export function BizFlowSidebar({ items, activeKey, onNavigate }: { items: NavIte
 
 export function BizFlowTopBar({ title, subtitle, searchValue, onSearchChange, profileName, profileRole, avatarLabel, actions }: { title: string; subtitle?: string; searchValue?: string; onSearchChange?: (value: string) => void; profileName?: string; profileRole?: string; avatarLabel?: string; actions?: React.ReactNode }) {
   const { theme } = useTheme();
-  const { logout } = useAuth();
-  const [loggingOut, setLoggingOut] = useState(false);
-  const handleLogout = async () => {
-    if (loggingOut) return;
-    setLoggingOut(true);
-    try { await logout(); }
-    finally { setLoggingOut(false); }
+  const openMyops = async () => {
+    try {
+      await Linking.openURL('https://www.myops.com.my/');
+    } catch {
+      Alert.alert('Unable to open MYOPS', 'Please open https://www.myops.com.my in your browser.');
+    }
   };
   return (
     <View style={styles.topBar}> 
@@ -227,7 +225,7 @@ export function BizFlowTopBar({ title, subtitle, searchValue, onSearchChange, pr
         </View>
       ) : null}
       {actions}
-      <BizFlowButton title={loggingOut ? 'Logging out…' : 'Logout'} icon="logout" variant="secondary" disabled={loggingOut} onPress={handleLogout} />
+      <BizFlowButton title="Back to MYOPS" icon="arrow-back" variant="secondary" onPress={openMyops} />
       {(profileName || profileRole) ? (
         <View style={[styles.profileChip, { backgroundColor: '#FFFFFF', borderColor: '#E2E8F0' }]}> 
           <View style={[styles.profileAvatar, { backgroundColor: '#EEEAF6' }]}> 
