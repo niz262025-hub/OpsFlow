@@ -4,6 +4,7 @@ import { Alert, Linking, View, Text, StyleSheet, TouchableOpacity, ScrollView, T
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useTheme } from '@/src/contexts/ThemeContext';
+import { myopsPortalUrl } from '@/src/services/myopsAppAccess';
 import { radius, spacing } from '@/src/constants/theme';
 
 type Tone = 'primary' | 'secondary' | 'success' | 'warning' | 'danger' | 'neutral';
@@ -207,7 +208,7 @@ export function BizFlowTopBar({ title, subtitle, searchValue, onSearchChange, pr
   const { theme } = useTheme();
   const openMyops = async () => {
     try {
-      await Linking.openURL('https://www.myops.com.my/');
+      await Linking.openURL(myopsPortalUrl());
     } catch {
       Alert.alert('Unable to open MYOPS', 'Please open https://www.myops.com.my in your browser.');
     }
