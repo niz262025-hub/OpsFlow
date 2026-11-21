@@ -2,7 +2,7 @@
 // Roles: admin > manager > cashier.
 //
 // Guidelines:
-//  - admin: full access (team, subscription, billing, delete anything).
+//  - admin: business administration; subscription billing belongs to MYOPS.
 //  - manager: business ops (inventory, purchases, expenses, reports, customers, sales history).
 //  - cashier: POS + view current inventory (read only) + view own sales.
 //
@@ -47,7 +47,7 @@ export function usePermissions(): Permissions {
       canExportData: manager,
       canManageCompany: manager,
       canManageTeam: admin,
-      canManageSubscription: admin,
+      canManageSubscription: false, // Managed centrally in MYOPS, never in OpsFlow.
       canBackupRestore: admin,
     };
   }, [role]);
@@ -60,7 +60,7 @@ export const ROLE_LABELS: Record<Role, string> = {
 };
 
 export const ROLE_DESCRIPTIONS: Record<Role, string> = {
-  admin: 'Full access: manage team, billing, and all business operations',
+  admin: 'Manage team and all business operations. Subscription billing is managed in MYOPS.',
   manager: 'Manage inventory, purchases, expenses, customers, and view reports',
   cashier: 'Operate POS and process sales only',
 };
