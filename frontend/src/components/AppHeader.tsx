@@ -2,21 +2,22 @@ import React, { useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
 import { useTheme } from '@/src/contexts/ThemeContext';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { useData } from '@/src/contexts/DataContext';
+import { useLocale } from '@/src/contexts/LocaleContext';
+import { localeOptions } from '@/src/i18n/translations';
 
 export function AppHeader() {
   const { theme } = useTheme();
-  const router = useRouter();
   const { logout, profile } = useAuth();
   const { company } = useData();
+  const { locale, setLocale, t } = useLocale();
   const [menuOpen, setMenuOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
 
   const displayName = profile?.displayName || profile?.email?.split('@')[0] || 'Admin';
-  const companyName = company?.name || 'BizFlow ERP';
+  const companyName = company?.name || 'OpsFlow';
   const roleLabel = profile?.role ? profile.role.charAt(0).toUpperCase() + profile.role.slice(1) : 'Admin';
   const avatarLabel = (displayName || 'A').charAt(0).toUpperCase();
 
@@ -27,13 +28,17 @@ export function AppHeader() {
     try {
       setMenuOpen(false);
       await logout();
-      router.replace('/login');
     } catch (error: any) {
-      Alert.alert('Sign out failed', error?.message || 'Could not sign out right now.');
+      Alert.alert('Tidak dapat kembali ke MYOPS', error?.message || 'Sila cuba lagi.');
     } finally {
       setLoggingOut(false);
     }
   };
+
+  const languageOptions = localeOptions.map((option) => ({
+    ...option,
+    active: option.code === locale,
+  }));
 
   return (
     <View style={styles.wrapper}>
@@ -41,10 +46,10 @@ export function AppHeader() {
         <View style={[styles.container, { borderBottomColor: theme.colors.border, backgroundColor: theme.colors.surface }]}> 
           <View style={styles.brandSection}>
             <View style={[styles.logo, { backgroundColor: theme.colors.primary }]}> 
-              <Text style={styles.logoText}>B</Text>
+              <Text style={styles.logoText}>O</Text>
             </View>
             <View style={styles.brandText}>
-              <Text style={[styles.brandTitle, { color: theme.colors.text }]}>BizFlow ERP</Text>
+              <Text style={[styles.brandTitle, { color: theme.colors.text }]}>OpsFlow</Text>
               <Text style={[styles.brandSubtitle, { color: theme.colors.textSecondary }]} numberOfLines={1}>
                 {companyName}
               </Text>
@@ -79,6 +84,21 @@ export function AppHeader() {
                   <Text style={[styles.dropdownCompany, { color: theme.colors.textSecondary }]} numberOfLines={1}>{companyName}</Text>
                   <Text style={[styles.dropdownRole, { color: theme.colors.primary }]}>{roleLabel}</Text>
                 </View>
+                <View style={styles.localeSection}>
+                  <Text style={[styles.sectionLabel, { color: theme.colors.textSecondary }]}>{t('common.language')}</Text>
+                  <View style={styles.localeList}>
+                    {languageOptions.map((option) => (
+                      <TouchableOpacity
+                        key={option.code}
+                        accessibilityRole="button"
+                        onPress={() => { void setLocale(option.code); setMenuOpen(false); }}
+                        style={[styles.localeItem, option.active && { backgroundColor: theme.colors.primaryLight, borderColor: theme.colors.primary }]}
+                      >
+                        <Text style={[styles.localeItemText, { color: option.active ? theme.colors.primary : theme.colors.text }]}>{option.label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
                 <TouchableOpacity
                   accessibilityRole="button"
                   testID="logout-button"
@@ -89,10 +109,10 @@ export function AppHeader() {
                   {loggingOut ? (
                     <ActivityIndicator size="small" color={theme.colors.primary} />
                   ) : (
-                    <MaterialIcons name="logout" size={18} color={theme.colors.error} />
+                    <MaterialIcons name="home" size={18} color={theme.colors.error} />
                   )}
                   <Text style={[styles.logoutText, { color: theme.colors.error }]}>
-                    {loggingOut ? 'Signing out...' : 'Sign Out'}
+                    {loggingOut ? t('common.returning') : t('common.returnMyops')}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -226,6 +246,35 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     marginTop: 4,
+  },
+  localeSection: {
+    paddingTop: 8,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(148, 163, 184, 0.25)',
+    marginBottom: 8,
+  },
+  sectionLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  localeList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  localeItem: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  localeItemText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
   logoutRow: {
     flexDirection: 'row',

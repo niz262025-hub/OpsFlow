@@ -1,9 +1,12 @@
+import { useLocale } from '@/src/contexts/LocaleContext';
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { useData } from '@/src/contexts/DataContext';
+import { salesByDay, cashLedgerBalance } from '@/src/utils/dashboardTotals';
 import { formatMYR } from '@/src/utils/currency';
+import { isLowStock } from '@/src/utils/inventoryThreshold';
 import { BizFlowButton, BizFlowChart, BizFlowDashboardShell, BizFlowKpiCard, BizFlowSectionCard, BizFlowStatusChip, BizFlowTable } from '@/src/components/designSystem';
 
 const modules = [
@@ -25,17 +28,18 @@ const quickActions = [
 ];
 
 export default function CustomerDashboard() {
+  const { tx } = useLocale();
   const router = useRouter();
   const { profile } = useAuth();
-  const { company, products, sales, purchases, expenses } = useData();
+  const { company, products, sales, purchaseOrders: orders, cashEntries } = useData();
   const [search, setSearch] = useState('');
 
   const stats = useMemo(() => {
-    const todaySales = sales.reduce((sum, sale) => sum + (sale.total || 0), 0);
-    const purchaseOrders = purchases.reduce((sum, purchase) => sum + (purchase.total || 0), 0);
-    const lowStockItems = products.filter((product) => product.stock <= (product.minStock || 10));
-    const cashBalance = expenses.reduce((sum, expense) => sum + (expense.amount || 0), 0);
-    const salesTrend = [42, 58, 49, 61, 72, 69, 88];
+    const salesTrend = salesByDay(sales);
+    const todaySales = salesTrend.today;
+    const purchaseOrders = orders.reduce((sum, purchase) => sum + (purchase.total || 0), 0);
+    const lowStockItems = products.filter((product) => isLowStock(product.stock, product.minStock));
+    const cashBalance = cashLedgerBalance(cashEntries);
 
     return {
       todaySales,
@@ -44,15 +48,15 @@ export default function CustomerDashboard() {
       cashBalance,
       salesTrend,
     };
-  }, [expenses, products, purchases, sales]);
+  }, [cashEntries, products, orders, sales]);
 
   return (
     <BizFlowDashboardShell
       sidebarItems={modules}
       activeKey="dashboard"
       onNavigate={(item) => (item.path === '/app' ? router.replace('/app' as never) : router.push(item.path as never))}
-      title="BizFlow Dashboard"
-      subtitle="Customer workspace"
+      title={tx("OpsFlow Dashboard")}
+      subtitle={tx("Customer workspace")}
       searchValue={search}
       onSearchChange={setSearch}
       profileName={profile?.displayName || company?.name || 'Business Owner'}
@@ -61,29 +65,29 @@ export default function CustomerDashboard() {
     >
       <View style={styles.content}>
         <View style={styles.kpiGrid}>
-          <BizFlowKpiCard label="Today Sales" value={formatMYR(stats.todaySales)} detail="Live from POS" />
-          <BizFlowKpiCard label="Purchase Orders" value={formatMYR(stats.purchaseOrders)} detail="Suppliers this week" />
-          <BizFlowKpiCard label="Low Stock" value={`${stats.lowStockItems.length}`} detail="Items need restock" tone="warning" />
-          <BizFlowKpiCard label="Cash Balance" value={formatMYR(stats.cashBalance)} detail="Bank and cash" tone="success" />
+          <BizFlowKpiCard label={tx("Today Sales")} value={formatMYR(stats.todaySales)} detail={tx("Live from POS")} />
+          <BizFlowKpiCard label={tx("Purchase Orders")} value={formatMYR(stats.purchaseOrders)} detail={tx("Purchase order value")} />
+          <BizFlowKpiCard label={tx("Low Stock")} value={`${stats.lowStockItems.length}`} detail={tx("Items need restock")} tone="warning" />
+          <BizFlowKpiCard label={tx("Cash Balance")} value={formatMYR(stats.cashBalance)} detail={tx("Cash ledger balance")} tone="success" />
         </View>
 
         <View style={styles.grid}>
-          <BizFlowSectionCard title="Sales chart" subtitle="Last 7 days" style={styles.card}>
-            <BizFlowChart data={stats.salesTrend} labels={['M', 'T', 'W', 'T', 'F', 'S', 'S']} />
+          <BizFlowSectionCard title={tx("Sales chart")} subtitle={tx("Last 7 days")} style={styles.card}>
+            <BizFlowChart data={stats.salesTrend.values} labels={stats.salesTrend.labels} />
           </BizFlowSectionCard>
 
-          <BizFlowSectionCard title="Inventory summary" subtitle={`${products.length} products tracked`} style={styles.card}>
+          <BizFlowSectionCard title={tx("Inventory summary")} subtitle={`${products.length} products tracked`} style={styles.card}>
             <View style={styles.summaryList}>
               <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Active stock</Text>
+                <Text style={styles.summaryLabel}>{tx("Active stock")}</Text>
                 <Text style={styles.summaryValue}>{products.reduce((sum, item) => sum + (item.stock || 0), 0)}</Text>
               </View>
               <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Low stock alerts</Text>
+                <Text style={styles.summaryLabel}>{tx("Low stock alerts")}</Text>
                 <Text style={styles.summaryValue}>{stats.lowStockItems.length}</Text>
               </View>
               <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Warehouse value</Text>
+                <Text style={styles.summaryLabel}>{tx("Warehouse value")}</Text>
                 <Text style={styles.summaryValue}>{formatMYR(products.reduce((sum, item) => sum + (item.stock || 0) * (item.costPrice || 0), 0))}</Text>
               </View>
             </View>
@@ -91,28 +95,28 @@ export default function CustomerDashboard() {
         </View>
 
         <View style={styles.grid}>
-          <BizFlowSectionCard title="Recent transactions" subtitle="Latest activity" style={styles.card}>
+          <BizFlowSectionCard title={tx("Recent transactions")} subtitle={tx("Latest activity")} style={styles.card}>
             <BizFlowTable columns={[{ key: 'ref', label: 'Reference' }, { key: 'status', label: 'Status' }, { key: 'amount', label: 'Amount' }]} rows={sales.slice(0, 3).map((sale) => ({ ref: sale.saleNumber || 'Sale', status: <BizFlowStatusChip label={sale.paymentMethod || 'Cash'} tone="success" />, amount: formatMYR(sale.total) }))} />
           </BizFlowSectionCard>
 
-          <BizFlowSectionCard title="Low stock alerts" subtitle="Needs attention" style={styles.card}>
+          <BizFlowSectionCard title={tx("Low stock alerts")} subtitle={tx("Needs attention")} style={styles.card}>
             <View style={styles.listWrap}>
               {stats.lowStockItems.slice(0, 3).map((product) => (
                 <View key={product.id} style={styles.listItem}>
                   <View style={styles.listDot} />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.listTitle}>{product.name}</Text>
-                    <Text style={styles.listSubtitle}>Stock: {product.stock} • Min: {product.minStock}</Text>
+                    <Text style={styles.listSubtitle}>{tx("Stock:")}{product.stock}{tx("• Min:")}{product.minStock}</Text>
                   </View>
                   <Text style={styles.listAmount}>{product.sku}</Text>
                 </View>
               ))}
-              {stats.lowStockItems.length === 0 && <Text style={styles.emptyText}>All stock is healthy.</Text>}
+              {stats.lowStockItems.length === 0 && <Text style={styles.emptyText}>{tx("All stock is healthy.")}</Text>}
             </View>
           </BizFlowSectionCard>
         </View>
 
-        <BizFlowSectionCard title="Quick actions" subtitle="Start fast" style={styles.fullCard}>
+        <BizFlowSectionCard title={tx("Quick actions")} subtitle={tx("Start fast")} style={styles.fullCard}>
           <View style={styles.quickActionsRow}>
             {quickActions.map((action) => (
               <BizFlowButton key={action.title} title={action.title} variant="secondary" icon={action.icon as any} onPress={() => router.push(action.path as never)} />
@@ -128,8 +132,8 @@ const styles = StyleSheet.create({
   content: { gap: 16 },
   kpiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },
-  card: { flex: 1, minWidth: 280 },
-  fullCard: { minWidth: 280 },
+  card: { flex: 1, minWidth: 0 },
+  fullCard: { minWidth: 0 },
   summaryList: { gap: 10 },
   summaryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   summaryLabel: { fontSize: 13, color: '#64748B', fontFamily: 'Inter' },

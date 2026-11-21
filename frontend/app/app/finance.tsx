@@ -1,3 +1,4 @@
+import { useLocale } from '@/src/contexts/LocaleContext';
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -17,6 +18,7 @@ const modules = [
 ];
 
 export default function CustomerFinance() {
+  const { tx } = useLocale();
   const router = useRouter();
   const { expenses, cashEntries, bankAccounts } = useData();
   const [search, setSearch] = useState('');
@@ -33,8 +35,8 @@ export default function CustomerFinance() {
       sidebarItems={modules}
       activeKey="finance"
       onNavigate={(item) => (item.path === '/app' ? router.replace('/app' as never) : router.push(item.path as never))}
-      title="Finance"
-      subtitle="Cash, expenses, and bank activity"
+      title={tx("Finance")}
+      subtitle={tx("Cash, expenses, and bank activity")}
       searchValue={search}
       onSearchChange={setSearch}
       profileName="Finance"
@@ -43,13 +45,13 @@ export default function CustomerFinance() {
     >
       <View style={styles.content}>
         <View style={styles.kpiGrid}>
-          <BizFlowKpiCard label="Expenses" value={formatMYR(totals.spend)} detail="Current month" />
-          <BizFlowKpiCard label="Cash entries" value={`${cashEntries.length}`} detail="Ledger activity" />
-          <BizFlowKpiCard label="Bank accounts" value={`${totals.accounts}`} detail="Connected accounts" tone="success" />
-          <BizFlowKpiCard label="Cash flow" value={formatMYR(totals.cash)} detail="Net movement" tone="warning" />
+          <BizFlowKpiCard label={tx("Expenses")} value={formatMYR(totals.spend)} detail={tx("Current month")} />
+          <BizFlowKpiCard label={tx("Cash entries")} value={`${cashEntries.length}`} detail={tx("Ledger activity")} />
+          <BizFlowKpiCard label={tx("Bank accounts")} value={`${totals.accounts}`} detail={tx("Connected accounts")} tone="success" />
+          <BizFlowKpiCard label={tx("Cash flow")} value={formatMYR(totals.cash)} detail={tx("Net movement")} tone="warning" />
         </View>
 
-        <BizFlowSectionCard title="Expense ledger" subtitle="Recent transactions from Firebase">
+        <BizFlowSectionCard title={tx("Expense ledger")} subtitle={tx("Recent company transactions")}>
           <BizFlowTable columns={[{ key: 'category', label: 'Category' }, { key: 'description', label: 'Description' }, { key: 'amount', label: 'Amount' }, { key: 'status', label: 'Status' }]} rows={filteredExpenses.map((expense) => ({ category: expense.category, description: expense.description || '—', amount: formatMYR(expense.amount), status: <BizFlowStatusChip label={expense.paymentSource || 'cash'} tone="success" /> }))} />
         </BizFlowSectionCard>
       </View>

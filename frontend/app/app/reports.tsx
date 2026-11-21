@@ -1,8 +1,10 @@
+import { useLocale } from '@/src/contexts/LocaleContext';
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useData } from '@/src/contexts/DataContext';
 import { BizFlowChart, BizFlowDashboardShell, BizFlowKpiCard, BizFlowSectionCard, BizFlowStatusChip, BizFlowTable } from '@/src/components/designSystem';
+import { salesByDay } from '@/src/utils/dashboardTotals';
 import { formatMYR } from '@/src/utils/currency';
 
 const modules = [
@@ -17,24 +19,26 @@ const modules = [
 ];
 
 export default function CustomerReports() {
+  const { tx } = useLocale();
   const router = useRouter();
-  const { sales, purchases, products } = useData();
+  const { sales, purchases, products, goodsReceipts } = useData();
   const [search, setSearch] = useState('');
 
+  const salesTrend = useMemo(() => salesByDay(sales), [sales]);
   const filteredSales = useMemo(() => sales.filter((sale) => `${sale.saleNumber} ${sale.customerName ?? ''}`.toLowerCase().includes(search.toLowerCase())).slice(0, 6), [sales, search]);
   const totals = useMemo(() => ({
     sales: sales.reduce((sum, sale) => sum + (sale.total || 0), 0),
-    purchases: purchases.reduce((sum, purchase) => sum + (purchase.total || 0), 0),
+    purchases: purchases.reduce((sum, purchase) => sum + (purchase.total || 0), 0) + goodsReceipts.reduce((sum, receipt) => sum + (receipt.totalAmount || 0), 0),
     products: products.length,
-  }), [products.length, purchases, sales]);
+  }), [products.length, purchases, sales, goodsReceipts]);
 
   return (
     <BizFlowDashboardShell
       sidebarItems={modules}
       activeKey="reports"
       onNavigate={(item) => (item.path === '/app' ? router.replace('/app' as never) : router.push(item.path as never))}
-      title="Reports"
-      subtitle="Business performance and trends"
+      title={tx("Reports")}
+      subtitle={tx("Business performance and trends")}
       searchValue={search}
       onSearchChange={setSearch}
       profileName="Analyst"
@@ -43,16 +47,16 @@ export default function CustomerReports() {
     >
       <View style={styles.content}>
         <View style={styles.kpiGrid}>
-          <BizFlowKpiCard label="Sales" value={formatMYR(totals.sales)} detail="Revenue tracked" />
-          <BizFlowKpiCard label="Purchases" value={formatMYR(totals.purchases)} detail="Spend tracked" tone="warning" />
-          <BizFlowKpiCard label="Products" value={`${totals.products}`} detail="Catalog coverage" tone="success" />
+          <BizFlowKpiCard label={tx("Sales")} value={formatMYR(totals.sales)} detail={tx("Revenue tracked")} />
+          <BizFlowKpiCard label={tx("Purchases")} value={formatMYR(totals.purchases)} detail={tx("Spend tracked")} tone="warning" />
+          <BizFlowKpiCard label={tx("Products")} value={`${totals.products}`} detail={tx("Catalog coverage")} tone="success" />
         </View>
 
         <View style={styles.grid}>
-          <BizFlowSectionCard title="Sales trend" subtitle="Last seven days" style={styles.card}>
-            <BizFlowChart data={[42, 55, 49, 68, 74, 81, 90]} labels={['M', 'T', 'W', 'T', 'F', 'S', 'S']} />
+          <BizFlowSectionCard title={tx("Sales trend")} subtitle={tx("Last seven days")} style={styles.card}>
+            <BizFlowChart data={salesTrend.values} labels={salesTrend.labels} />
           </BizFlowSectionCard>
-          <BizFlowSectionCard title="Recent sales" subtitle="Latest transactions" style={styles.card}>
+          <BizFlowSectionCard title={tx("Recent sales")} subtitle={tx("Latest transactions")} style={styles.card}>
             <BizFlowTable columns={[{ key: 'sale', label: 'Sale' }, { key: 'status', label: 'Status' }, { key: 'amount', label: 'Amount' }]} rows={filteredSales.map((sale) => ({ sale: sale.saleNumber, status: <BizFlowStatusChip label={sale.paymentMethod || 'Cash'} tone="success" />, amount: formatMYR(sale.total) }))} />
           </BizFlowSectionCard>
         </View>
@@ -65,5 +69,5 @@ const styles = StyleSheet.create({
   content: { gap: 16 },
   kpiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },
-  card: { flex: 1, minWidth: 320 },
+  card: { flex: 1, minWidth: 0 },
 });

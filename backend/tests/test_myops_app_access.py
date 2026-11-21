@@ -7,6 +7,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from backend.myops_app_access import (
     MyopsAccessError,
+    _load_signing_config,
     canonical_json,
     canonical_request,
     signed_headers,
@@ -43,6 +44,20 @@ class MyopsAppAccessContractTests(unittest.TestCase):
         with self.assertRaises(Exception):
             private_key.public_key().verify(signature, message + b"changed")
 
+    def test_production_rejects_staging_authority_and_share_transport(self):
+        for config in [
+            {'MYOPS_APP_API_ORIGIN':'https://southerndotcom-website-git-feat-myop-ca0019-mohd-syaiful-nizam1.vercel.app'},
+            {'MYOPS_APP_API_ORIGIN':'https://www.myops.com.my','MYOPS_STAGING_SHARE_TOKEN':'dummy'},
+        ]:
+            with patch.dict('os.environ',{'VERCEL_ENV':'production',**config},clear=True):
+                with self.assertRaisesRegex(MyopsAccessError,'Production must use'):
+                    _load_signing_config()
+
+    def test_production_signs_with_live_authority_without_preview_transport(self):
+        key=Ed25519PrivateKey.generate().private_bytes(serialization.Encoding.PEM,serialization.PrivateFormat.PKCS8,serialization.NoEncryption()).decode()
+        with patch.dict('os.environ',{'VERCEL_ENV':'production','MYOPS_APP_API_ORIGIN':'https://www.myops.com.my','MYOPS_APP_PRIVATE_KEY_CURRENT':key},clear=True):
+            self.assertEqual(_load_signing_config()[0],'https://www.myops.com.my')
+
     def test_redeem_response_requires_opsflow_product_and_valid_ids(self):
         self.assertEqual(
             validate_redeem_response({
@@ -54,6 +69,12 @@ class MyopsAppAccessContractTests(unittest.TestCase):
         )
         with self.assertRaises(MyopsAccessError):
             validate_redeem_response({"product": "opsfinance", "session_id": "bad", "user_ref": "bad"})
+
+    def test_app_identity_cannot_be_reconfigured_to_another_product(self):
+        key=Ed25519PrivateKey.generate().private_bytes(serialization.Encoding.PEM,serialization.PrivateFormat.PKCS8,serialization.NoEncryption()).decode()
+        for app_id in ['opsfinance','opsp','opshr','all-apps','opsflow-bundle']:
+            with patch.dict('os.environ',{'MYOPS_APP_API_ORIGIN':'https://www.myops.com.my','MYOPS_APP_ID':app_id,'MYOPS_APP_PRIVATE_KEY_CURRENT':key},clear=True):
+                with self.assertRaises(MyopsAccessError): _load_signing_config()
 
 
 if __name__ == "__main__":
