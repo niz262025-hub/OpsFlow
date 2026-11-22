@@ -54,7 +54,7 @@ export function AuthProvider({children}:{children:React.ReactNode}) {
    if(busy)return;busy=true;
    try {
     const ticket=url?extractMyopsLaunchTicket(url):null;
-    if(ticket){await clearMyopsLaunchTicketFromUrl();const result=await redeemMyopsLaunchTicket(ticket);if(!alive){await endMyopsSession(result.accessToken);return;}await storage.secureSet(OPSFLOW_API_TOKEN_KEY,result.accessToken);adopt(result.onboardingRequired ? {onboarding_required:true} : result.profile!);}
+    if(ticket){await clearMyopsLaunchTicketFromUrl();const result=await redeemMyopsLaunchTicket(ticket);if(!alive){await endMyopsSession(result.accessToken);return;}const stored=await storage.secureSet(OPSFLOW_API_TOKEN_KEY,result.accessToken);if(!stored){await endMyopsSession(result.accessToken).catch(()=>{});throw new Error('Unable to securely persist OpsFlow session');}adopt(result.onboardingRequired ? {onboarding_required:true} : result.profile!);}
     else {const token=await storage.secureGet<string|null>(OPSFLOW_API_TOKEN_KEY,null);if(!token||!await refreshMyopsSession(token,false)){if(alive)await clear();return;}const next=await opsflowRequest('/api/auth/me');if(alive)adopt(next);}
    }catch{if(alive)await clear();}finally{busy=false;}
   };
