@@ -18,6 +18,9 @@ CREATE FUNCTION public.opsflow_trial_document_gateway(p_token_hash text,p_trial_
 RETURNS jsonb LANGUAGE plpgsql SECURITY INVOKER SET search_path=public,pg_temp AS $$
 DECLARE ctx jsonb; company uuid; receipt public.opsflow_trial_receipts%rowtype; result jsonb; item jsonb; used integer; flows integer;
 BEGIN
+ -- Match the document gateway lock order: session first, then company.
+ -- Serialize concurrent commits for the same session before resolving its context.
+ PERFORM 1 FROM public.opsflow_app_sessions WHERE token_hash=p_token_hash FOR UPDATE;
  ctx=public.opsflow_session_context(p_token_hash);
  IF ctx IS NULL OR p_trial_id IS NULL OR p_request_id IS NULL OR p_expires_at IS NULL OR p_expires_at<=now() THEN RAISE EXCEPTION 'Active verified trial required'; END IF;
  company=(ctx->>'companyId')::uuid;
