@@ -125,7 +125,7 @@ def preview_opener(origin):
     return client.open
 
 
-def call_myops(path: str, body: dict[str, Any], *, opener: Callable[..., Any] | None = None) -> dict[str, Any]:
+def call_myops(path: str, body: dict[str, Any], *, opener: Callable[..., Any] | None = None, require_broker_response: bool = False) -> dict[str, Any]:
     origin, _, _, _ = _load_signing_config()
     headers = signed_headers(path, body)
     oidc = vercel_request_oidc.get()
@@ -152,8 +152,12 @@ def call_myops(path: str, body: dict[str, Any], *, opener: Callable[..., Any] | 
         try:
             payload = json.loads(error.read())
         except (ValueError, OSError):
+            if require_broker_response and error.code in (401, 403):
+                raise MyopsAccessError("MYOPS broker response was not received") from error
             payload = {}
         if error.code in (401, 403):
+            if require_broker_response and not isinstance(payload, dict):
+                raise MyopsAccessError("MYOPS broker response was not received") from error
             return payload if isinstance(payload, dict) else {"entitled": False, "session_active": False}
         raise MyopsAccessError("MYOPS access could not be verified") from error
     except (URLError, TimeoutError, OSError, ValueError) as error:

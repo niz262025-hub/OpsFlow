@@ -160,7 +160,7 @@ async def sso_readiness():
     try:
         result = await run_in_threadpool(call_myops, '/api/app/entitlement', {
             'session_id': '00000000-0000-4000-8000-000000000001',
-            'product': 'opsflow', 'activity': False, 'sensitive': False})
+            'product': 'opsflow', 'activity': False, 'sensitive': False}, require_broker_response=True)
     except MyopsAccessError as error:
         # Preview-only readiness diagnostics: expose a bounded category, never URLs,
         # credentials, signed payloads or raw exception messages.

@@ -1,5 +1,7 @@
 """Preview OIDC is origin scoped and never replaces app signatures."""
 import json
+from io import BytesIO
+from urllib.error import HTTPError
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -15,7 +17,7 @@ import unittest
 class OidcTransportTests(unittest.TestCase):
     def test_platform_token_is_request_scoped_and_not_returned(self):
         seen = []
-        def central(*args):
+        def central(*args, **kwargs):
             seen.append(access.vercel_request_oidc.get())
             return {'entitled': False, 'session_active': False}
         with patch.dict('os.environ', {'VERCEL_ENV': 'preview'}), patch.object(api, 'call_myops', side_effect=central):
@@ -28,6 +30,16 @@ class OidcTransportTests(unittest.TestCase):
         assert seen == ['dummy-oidc', '']
         assert access.vercel_request_oidc.get() == ''
 
+
+    def test_readiness_does_not_accept_a_platform_protection_page(self):
+        response = HTTPError('https://portal.vercel.app', 401, 'Unauthorized', {}, BytesIO(b'<html>Sign in</html>'))
+        with patch.dict('os.environ', {'VERCEL_ENV': 'preview'}), \
+             patch.object(access, '_load_signing_config', return_value=('https://portal.vercel.app', 'opsflow', 'current', None)), \
+             patch.object(access, 'signed_headers', return_value={}), \
+             patch.object(access, 'preview_opener', return_value=MagicMock(side_effect=response)):
+            result = TestClient(api.app).get('/api/sso-ready')
+        assert result.status_code == 503
+        assert result.headers['x-myops-readiness-reason'] == 'upstream_http_401'
 
     def test_oidc_transport_keeps_signature_and_rejects_redirects(self):
         client = MagicMock()
