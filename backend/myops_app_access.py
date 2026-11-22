@@ -128,7 +128,8 @@ def preview_opener(origin):
 def call_myops(path: str, body: dict[str, Any], *, opener: Callable[..., Any] | None = None, require_broker_response: bool = False) -> dict[str, Any]:
     origin, _, _, _ = _load_signing_config()
     headers = signed_headers(path, body)
-    oidc = vercel_request_oidc.get()
+    # Use the explicitly configured Preview transport when both are present.
+    oidc = "" if os.getenv("MYOPS_STAGING_SHARE_TOKEN", "").strip() else vercel_request_oidc.get()
     if oidc:
         # The platform validates this short-lived identity against the target's
         # Trusted Sources. App-level Ed25519 authentication remains mandatory.
