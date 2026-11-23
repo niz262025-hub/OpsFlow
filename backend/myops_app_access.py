@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import logging
 import os
 import re
 import secrets
@@ -150,6 +151,10 @@ def call_myops(path: str, body: dict[str, Any], *, opener: Callable[..., Any] | 
                 raise MyopsAccessError("MYOPS returned an invalid response")
             return payload
     except HTTPError as error:
+        if os.getenv('VERCEL_ENV') == 'preview':
+            content_type = error.headers.get('Content-Type', '') if error.headers else ''
+            response_kind = {'application/json': 'json', 'text/html': 'html'}.get(content_type.split(';')[0], 'other')
+            logging.getLogger(__name__).warning('opsflow_myops_transport_failed %s %d %s', path, error.code, response_kind)
         try:
             payload = json.loads(error.read())
         except (ValueError, OSError):
@@ -162,6 +167,8 @@ def call_myops(path: str, body: dict[str, Any], *, opener: Callable[..., Any] | 
             return payload if isinstance(payload, dict) else {"entitled": False, "session_active": False}
         raise MyopsAccessError("MYOPS access could not be verified") from error
     except (URLError, TimeoutError, OSError, ValueError) as error:
+        if os.getenv('VERCEL_ENV') == 'preview':
+            logging.getLogger(__name__).warning('opsflow_myops_transport_failed %s network', path)
         raise MyopsAccessError("MYOPS access could not be verified") from error
 
 
