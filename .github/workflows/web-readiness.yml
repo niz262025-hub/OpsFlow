@@ -18,6 +18,7 @@ jobs:
         with:
           node-version: '22'
       - run: npm ci --ignore-scripts
+      - run: node scripts/test-central-organization.mjs
       - run: node scripts/test-supabase-gateway.mjs
       - run: node scripts/test-atomic-trial.mjs
       - run: node scripts/test-onboarding.mjs
