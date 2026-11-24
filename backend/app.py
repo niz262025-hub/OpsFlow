@@ -112,6 +112,25 @@ def close_access(digest):
     database('rpc/opsflow_onboarding', {'p_action': 'close', 'p_token_hash': digest})
 
 
+def organization_bound():
+    return os.getenv('VERCEL_ENV') == 'preview' and os.getenv('OPSFLOW_ORGANIZATION_BOUND') == 'true'
+
+
+def central_organization(context):
+    if not organization_bound():
+        return {}
+    try:
+        org = str(UUID(context['organization_id']))
+    except (ValueError, KeyError, TypeError, AttributeError):
+        raise HTTPException(403, 'Organization session required') from None
+    return {'organization_id': org}
+
+
+def check_central_organization(reply, context):
+    if organization_bound() and reply.get('organization_id') != central_organization(context)['organization_id']:
+        raise HTTPException(403, 'Organization access denied')
+
+
 class Ticket(BaseModel):
     ticket: str = Field(max_length=43)
 
@@ -188,12 +207,20 @@ async def redeem(body: Ticket):
         redeemed = validate_redeem_response(reply)
     except MyopsAccessError:
         raise HTTPException(403, 'MYOPS launch could not be verified') from None
+    bound_org = None
+    if organization_bound():
+        try:
+            bound_org = str(UUID(reply['organization_id']))
+        except (KeyError, ValueError, TypeError, AttributeError):
+            raise HTTPException(403, 'Organization required') from None
     token = secrets.token_urlsafe(48)
     digest = hashlib.sha256(token.encode()).hexdigest()
     # Identity is derived only from the verified central ticket, never client email.
-    context = await run_in_threadpool(database, 'rpc/opsflow_open_session', {
-        'p_user_ref': redeemed['user_ref'], 'p_session_id': redeemed['session_id'], 'p_token_hash': digest})
+    context = await run_in_threadpool(database, 'rpc/opsflow_open_organization_session' if bound_org else 'rpc/opsflow_open_session', {
+        'p_user_ref': redeemed['user_ref'], 'p_session_id': redeemed['session_id'], 'p_token_hash': digest, **({'p_organization_id': bound_org} if bound_org else {})})
     if not context:
+        if bound_org:
+            raise HTTPException(403, 'Organization workspace mapping required')
         pending = await run_in_threadpool(database, 'rpc/opsflow_onboarding', {
             'p_action': 'prepare', 'p_token_hash': digest,
             'p_user_ref': redeemed['user_ref'], 'p_session_id': redeemed['session_id']})
@@ -216,9 +243,10 @@ async def refresh(body: Refresh, digest: str = Depends(token_hash)):
     try:
         reply = await run_in_threadpool(call_myops, '/api/app/entitlement', {
             'session_id': context['session_id'], 'product': 'opsflow',
-            'activity': body.activity, 'sensitive': False})
+            'activity': body.activity, 'sensitive': False, **central_organization(context)})
     except MyopsAccessError:
         raise HTTPException(503, 'MYOPS access could not be verified') from None
+    check_central_organization(reply, context)
     if reply.get('entitled') is not True or reply.get('session_active') is not True:
         await run_in_threadpool(close_access, digest)
         raise HTTPException(403, 'MYOPS access is no longer active')
@@ -250,9 +278,10 @@ async def complete_onboarding(body: CompanyOnboarding, digest: str = Depends(tok
     try:
         reply = await run_in_threadpool(call_myops, '/api/app/entitlement', {
             'session_id': context['session_id'], 'product': 'opsflow',
-            'activity': True, 'sensitive': True})
+            'activity': True, 'sensitive': True, **central_organization(context)})
     except MyopsAccessError:
         raise HTTPException(503, 'MYOPS access could not be verified') from None
+    check_central_organization(reply, context)
     if reply.get('entitled') is not True or reply.get('session_active') is not True:
         await run_in_threadpool(close_access, digest)
         raise HTTPException(403, 'MYOPS access is no longer active')
@@ -274,7 +303,8 @@ async def data(body: DocumentRequest, digest: str = Depends(token_hash)):
         context = await run_in_threadpool(session_context, digest)
         try:
             access = await run_in_threadpool(call_myops, '/api/app/entitlement', {
-                'session_id': context['session_id'], 'product': 'opsflow', 'activity': True, 'sensitive': True})
+                'session_id': context['session_id'], 'product': 'opsflow', 'activity': True, 'sensitive': True, **central_organization(context)})
+            check_central_organization(access, context)
             if access.get('entitled') is not True or access.get('session_active') is not True:
                 raise HTTPException(403, 'MYOPS access is no longer active')
             # Require an explicit central mode; never infer paid access from absence.
