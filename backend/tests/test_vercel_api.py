@@ -31,6 +31,24 @@ class VercelApiTests(unittest.TestCase):
    self.assertEqual(self.client.post('/api/app-access/redeem',json={'ticket':'T'*43}).status_code,403)
   with patch.object(api,'call_myops',return_value={**reply,'product':'opsfinance'}):
    self.assertEqual(self.client.post('/api/app-access/redeem',json={'ticket':'T'*43}).status_code,403)
+ def test_bound_launch_requires_explicit_existing_organization_mapping(self):
+  org='00000000-0000-4000-8000-000000000002'
+  reply={'product':'opsflow','user_ref':'U'*43,'session_id':'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','organization_id':org}
+  with patch.dict(api.os.environ,{'VERCEL_ENV':'preview','OPSFLOW_ORGANIZATION_BOUND':'true'}), patch.object(api,'call_myops',return_value=reply), patch.object(api,'database',return_value=None) as db:
+   result=self.client.post('/api/app-access/redeem',json={'ticket':'T'*43})
+   self.assertEqual(result.status_code,403)
+   self.assertEqual(db.call_args.args[0],'rpc/opsflow_open_organization_session')
+   self.assertEqual(db.call_args.args[1]['p_organization_id'],org)
+   self.assertEqual(db.call_count,1)
+ def test_bound_refresh_rejects_wrong_organization(self):
+  org='00000000-0000-4000-8000-000000000002'
+  other='00000000-0000-4000-8000-000000000003'
+  context={'session_id':'session','organization_id':org}
+  with patch.dict(api.os.environ,{'VERCEL_ENV':'preview','OPSFLOW_ORGANIZATION_BOUND':'true'}), patch.object(api,'access_context',return_value=context), patch.object(api,'call_myops',return_value={'entitled':True,'session_active':True,'organization_id':other}) as central,patch.object(api,'database') as db:
+   result=self.client.post('/api/app-access/refresh',headers={'Authorization':'Bearer '+'A'*64},json={})
+   self.assertEqual(result.status_code,403)
+   self.assertEqual(central.call_args.args[1]['organization_id'],org)
+   db.assert_not_called()
  def test_expired_local_session_not_forwarded_or_revived(self):
   with patch.object(api,'database',return_value=None),patch.object(api,'call_myops') as central:
    result=self.client.post('/api/app-access/refresh',headers={'Authorization':'Bearer '+'A'*64},json={'activity':True})
