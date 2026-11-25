@@ -1,0 +1,62 @@
+name: OpsFlow isolated Supabase replay
+on:
+  push:
+    branches: ['staging/production-baseline']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.54.11
+      - name: Start disposable Supabase
+        run: |
+          mkdir -p "$RUNNER_TEMP/opsflow-replay"
+          cd "$RUNNER_TEMP/opsflow-replay"
+          supabase init
+          supabase start
+      - name: Replay all five migrations in order
+        run: |
+          set -euo pipefail
+          export PGHOST=127.0.0.1 PGPORT=54322 PGUSER=postgres PGPASSWORD=postgres PGDATABASE=postgres
+          for file in supabase/migrations/*.sql; do
+            echo "Replay: $file"
+            psql -X -v ON_ERROR_STOP=1 -f "$file"
+          done
+          psql -X -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          DECLARE t text; r text; p text; f text;
+          BEGIN
+            FOREACH t IN ARRAY ARRAY['opsflow_profiles','opsflow_companies','opsflow_memberships','opsflow_app_sessions','opsflow_documents','opsflow_onboarding_sessions','opsflow_trial_usage','opsflow_trial_receipts'] LOOP
+              IF to_regclass('public.'||t) IS NULL THEN RAISE EXCEPTION 'Missing table %',t; END IF;
+              IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid=to_regclass('public.'||t)) THEN RAISE EXCEPTION 'RLS missing %',t; END IF;
+              FOREACH r IN ARRAY ARRAY['anon','authenticated'] LOOP
+                FOREACH p IN ARRAY ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER'] LOOP
+                  IF has_table_privilege(r,'public.'||t,p) THEN RAISE EXCEPTION 'Unexpected browser grant % % %',r,t,p; END IF;
+                END LOOP;
+              END LOOP;
+              FOREACH p IN ARRAY ARRAY['SELECT','INSERT'] LOOP
+                IF NOT has_table_privilege('service_role','public.'||t,p) THEN RAISE EXCEPTION 'Missing service grant % %',t,p; END IF;
+              END LOOP;
+              IF t NOT IN ('opsflow_trial_usage','opsflow_trial_receipts') THEN
+                FOREACH p IN ARRAY ARRAY['UPDATE','DELETE'] LOOP
+                  IF NOT has_table_privilege('service_role','public.'||t,p) THEN RAISE EXCEPTION 'Missing service grant % %',t,p; END IF;
+                END LOOP;
+              END IF;
+            END LOOP;
+            FOREACH f IN ARRAY ARRAY['opsflow_session_context(text)','opsflow_open_session(text,uuid,text)','opsflow_close_session(text)','opsflow_touch_session(text,boolean)','opsflow_resolve_value(jsonb)','opsflow_document_gateway(text,text,jsonb)','opsflow_onboarding(text,text,text,uuid,text,text,boolean)','opsflow_trial_document_gateway(text,uuid,timestamptz,uuid,jsonb)'] LOOP
+              IF to_regprocedure('public.'||f) IS NULL THEN RAISE EXCEPTION 'Missing function %',f; END IF;
+              IF has_function_privilege('anon','public.'||f,'EXECUTE') OR has_function_privilege('authenticated','public.'||f,'EXECUTE') OR NOT has_function_privilege('service_role','public.'||f,'EXECUTE') THEN RAISE EXCEPTION 'Function ACL mismatch %',f; END IF;
+            END LOOP;
+          END $$;
+          SQL
+      - name: Cleanup disposable Supabase
+        if: always()
+        run: |
+          cd "$RUNNER_TEMP/opsflow-replay"
+          supabase stop --no-backup
